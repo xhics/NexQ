@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { useStreamStore } from "../stores/streamStore";
 import { useConfigStore } from "../stores/configStore";
 import { logToFile } from "../lib/logger";
+import { useQuestionStore } from "../stores/questionStore";
+import { matchStory, useStoryStore } from "../stores/storyStore";
 
 /**
  * After the voice stops, its echo can still be in the transcript this long:
@@ -81,6 +83,8 @@ function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
 /**
  * Reads the answer aloud while it is written: each sentence as soon as it is
  * finished, not the whole answer at the end. A new answer stops the old one.
+ * A prepared story that matches the question is read at once instead, and the
+ * AI's answer to that question isn't read over it.
  */
 export function useLiveSpeech(): void {
   const enabled = useConfigStore((s) => s.speakAnswers ?? false);
@@ -115,8 +119,40 @@ export function useLiveSpeech(): void {
       speechSynthesis.speak(utterance);
     };
 
+    // The question whose prepared story is being read (its AI answer stays silent).
+    let storyQuestion: string | null = null;
+    let storyId: string | null = null;
+    const onQuestion = (question: string) => {
+      if (!question || useQuestionStore.getState().paused) return;
+      const story = matchStory(question, useStoryStore.getState().stories);
+      if (!story) {
+        storyQuestion = null;
+        return;
+      }
+      storyQuestion = question;
+      if (story.id === storyId) return; // the same line grew: already being read
+      storyId = story.id;
+      stopSpeaking();
+      say(story.answer);
+      logToFile("info", "speech", "Reading a prepared story");
+    };
+    let lastQuestion = useQuestionStore.getState().questions[0]?.text ?? "";
+    const unsubscribeQuestions = useQuestionStore.subscribe((s) => {
+      const question = s.questions[0]?.text ?? "";
+      if (question === lastQuestion) return;
+      lastQuestion = question;
+      onQuestion(question);
+    });
+
     const onChange = (state: ReturnType<typeof useStreamStore.getState>) => {
       const content = state.currentContent ?? "";
+      // The prepared story is read for this question: its AI answer isn't.
+      if (storyQuestion !== null && storyQuestion === lastQuestion) {
+        lastContent = content;
+        spoken = content.length;
+        return;
+      }
+      storyId = null;
       // A new answer (or the old one dropped): stop and start over.
       if (content.length < lastContent.length || !content.startsWith(lastContent.slice(0, 40))) {
         if (spoken > 0 || speaking) stopSpeaking();
@@ -135,6 +171,7 @@ export function useLiveSpeech(): void {
     logToFile("info", "speech", "Reading answers aloud");
     return () => {
       unsubscribe();
+      unsubscribeQuestions();
       stopSpeaking();
     };
   }, [enabled]);
