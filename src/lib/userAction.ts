@@ -5,6 +5,7 @@
 // generateAssist directly and never carry a scope.
 
 import { generateAssist } from "./ipc";
+import { withOfflineFallback } from "./offlineFallback";
 import { resolveScope, DEFAULT_CONTEXT_SCOPE } from "./contextScope";
 import { getModeLabel } from "./utils";
 import type { IntelligenceMode } from "./types";
@@ -45,7 +46,14 @@ export async function runUserAction(
   }
 
   try {
-    await generateAssist(mode, customQuestion, { requestId, scope });
+    // Online AI unreachable: the same answer once more, on a local model.
+    await withOfflineFallback(
+      () => generateAssist(mode, customQuestion, { requestId, scope }),
+      async () => {
+        useStreamStore.getState().setPending(mode, requestId);
+        await generateAssist(mode, customQuestion, { requestId, scope });
+      },
+    );
   } catch (err) {
     useStreamStore.getState().clearPending(requestId);
     throw err;

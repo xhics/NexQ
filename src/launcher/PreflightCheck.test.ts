@@ -7,6 +7,7 @@ vi.mock("../lib/ipc", () => ({
   testOllamaEmbeddingConnection: vi.fn(async () => ({ connected: true, models: ["nomic-embed-text:latest"] })),
   listContextResources: vi.fn(async () => [{ id: "cv" }]),
   getRagStatus: vi.fn(async () => ({ total_chunks: 0 })),
+  listModels: vi.fn(async () => [{ id: "qwen2.5:3b" }]),
 }));
 vi.mock("../stores/storyStore", () => ({
   useStoryStore: { getState: () => ({ load: async () => {}, stories: [] }) },

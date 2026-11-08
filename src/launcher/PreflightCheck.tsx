@@ -10,6 +10,7 @@ import {
 } from "../lib/ipc";
 import { useConfigStore } from "../stores/configStore";
 import { useStoryStore } from "../stores/storyStore";
+import { localChatModel } from "../lib/offlineFallback";
 
 type Status = "pending" | "ok" | "fail" | "skip";
 export interface CheckResult {
@@ -69,6 +70,14 @@ export async function runPreflight(): Promise<CheckResult[]> {
     const rag = await getRagStatus();
     return rag.total_chunks > 0 || "Your CV isn't indexed yet: index it in the Context panel";
   }, "Couldn't read your documents");
+  checks.push(
+    within(localChatModel()).then(
+      (model): CheckResult => model
+        ? { label: `Backup AI without Internet (${model})`, status: "ok" }
+        : { label: "Backup AI without Internet", status: "skip", hint: "Optional: run ollama pull qwen2.5:3b" },
+      (): CheckResult => ({ label: "Backup AI without Internet", status: "skip", hint: "Optional: start Ollama" }),
+    ),
+  );
   checks.push(
     useStoryStore.getState().load().then((): CheckResult => {
       const n = useStoryStore.getState().stories.length;
