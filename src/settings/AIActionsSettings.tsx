@@ -57,6 +57,11 @@ const LENGTH_OPTIONS = [
   { label: "Detailed", value: "detailed" },
 ];
 
+const CUE_OPTIONS = [
+  { label: "Off", value: null },
+  { label: "Keywords first", value: "keywords" },
+];
+
 const OPINION_OPTIONS = [
   { label: "Factual only", value: null },
   { label: "Add my take", value: "add" },
@@ -76,6 +81,10 @@ const HELP: Record<string, { title: string; body: string }> = {
   length: {
     title: "Length",
     body: "Adjusts response verbosity.\n\nBrief (1-2 sentences) \u2014 fast-paced calls, overlay readability\nStandard (3-5 sentences) \u2014 balanced detail for most meetings\nDetailed \u2014 thorough analysis when you have time to read",
+  },
+  cue: {
+    title: "Cue card",
+    body: "Reading a whole answer while you speak is hard.\n\nKeywords first — each answer opens with a line of 3 to 5 keywords or figures to mention (shown large, not read aloud), then one short sentence you can say at once, then the rest.",
   },
   opinion: {
     title: "Perspective",
@@ -376,6 +385,7 @@ export function AIActionsSettings() {
       };
       parts.push(lm[p.length] || `${p.length} responses.`);
     }
+    if (p.cue === "keywords") parts.push("Opens with a line of keywords, then a first sentence to say.");
     if (p.opinion === "add") {
       parts.push("Adds a 'My Take' section with the AI's own analysis.");
     }
@@ -459,6 +469,30 @@ export function AIActionsSettings() {
                     onClick={() => handlePresetToggle("length", opt.value)}
                     className={`rounded-full px-3 py-1 text-xs font-medium cursor-pointer transition-colors duration-150 ${
                       configs.instructionPresets.length === opt.value
+                        ? "bg-primary/20 text-primary ring-1 ring-primary/20"
+                        : "text-muted-foreground hover:bg-accent/50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cue card */}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                Cue card
+                <HelpButton id="cue" activeId={openHelp} onToggle={toggleHelp} />
+              </label>
+              {openHelp === "cue" && <HelpPanel id="cue" />}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {CUE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.label}
+                    onClick={() => setInstructionPresets({ ...configs.instructionPresets, cue: opt.value })}
+                    className={`rounded-full px-3 py-1 text-xs font-medium cursor-pointer transition-colors duration-150 ${
+                      (configs.instructionPresets.cue ?? null) === opt.value
                         ? "bg-primary/20 text-primary ring-1 ring-primary/20"
                         : "text-muted-foreground hover:bg-accent/50"
                     }`}

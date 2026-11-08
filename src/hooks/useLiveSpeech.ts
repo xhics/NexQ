@@ -40,6 +40,8 @@ export function stopSpeaking(): void {
 /** Markdown to plain words for the voice. */
 export function speakableText(markdown: string): string {
   return markdown
+    // The cue card's keywords are to glance at, not to hear.
+    .replace(/^\s*⚡[^\n]*(?:\n|$)/gmu, " ")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")

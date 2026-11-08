@@ -60,6 +60,8 @@ pub struct InstructionPresets {
     pub format: Option<String>,
     pub length: Option<String>,
     pub opinion: Option<String>,
+    /// "keywords": answers open with a line of keywords to glance at (a cue card).
+    pub cue: Option<String>,
 }
 
 impl Default for InstructionPresets {
@@ -69,6 +71,7 @@ impl Default for InstructionPresets {
             format: None,
             length: None,
             opinion: None,
+            cue: None,
         }
     }
 }

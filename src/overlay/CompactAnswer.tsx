@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AnswerMarkdown } from "./CueLine";
 import { Maximize2, Eye, Pause, Play, Headphones } from "lucide-react";
 import { stopSpeaking } from "../hooks/useLiveSpeech";
 import { useQuestionStore } from "../stores/questionStore";
@@ -212,7 +211,7 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
             className="prose prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0"
             style={{ fontSize: `${fontSize + 3}px`, color, lineHeight: 1.45, textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.6)" }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <AnswerMarkdown content={content} cueSize={fontSize + 6} />
             {isStreaming && <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-primary/60" />}
           </div>
         ) : (

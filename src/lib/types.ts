@@ -949,6 +949,8 @@ export interface InstructionPresets {
   format: string | null;
   length: string | null;
   opinion: string | null;
+  /** "keywords": answers open with a "⚡" line of keywords to glance at. */
+  cue?: string | null;
 }
 
 export interface AllActionConfigs {

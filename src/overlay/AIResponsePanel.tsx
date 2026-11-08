@@ -10,8 +10,7 @@ import {
   Globe,
   History,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AnswerMarkdown } from "./CueLine";
 import { getModeLabel } from "../lib/utils";
 import type { AIResponse, StreamSource } from "../lib/types";
 import { useConfigStore } from "../stores/configStore";
@@ -218,9 +217,7 @@ export function AIResponsePanel() {
             <ResponseProgress />
             {currentContent && (
               <div className="prose prose-sm prose-invert max-w-none leading-relaxed" style={proseStyle}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {currentContent}
-                </ReactMarkdown>
+                <AnswerMarkdown content={currentContent} cueSize={aiResponseFontSize + 2} />
                 <span className="inline-block h-3 w-0.5 animate-pulse bg-primary/60 ml-0.5" />
               </div>
             )}
@@ -241,9 +238,7 @@ export function AIResponsePanel() {
               />
             )}
             <div className="prose prose-sm prose-invert max-w-none leading-relaxed" style={proseStyle}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {currentContent}
-              </ReactMarkdown>
+              <AnswerMarkdown content={currentContent} cueSize={aiResponseFontSize + 2} />
             </div>
             <SourcesList sources={currentSources} />
           </div>
@@ -261,9 +256,7 @@ export function AIResponsePanel() {
               onPin={() => handlePin(displayResponse!.id)}
             />
             <div className="prose prose-sm prose-invert max-w-none leading-relaxed" style={proseStyle}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {displayContent}
-              </ReactMarkdown>
+              <AnswerMarkdown content={displayContent} cueSize={aiResponseFontSize + 2} />
             </div>
             <SourcesList sources={displayResponse.sources} />
           </div>

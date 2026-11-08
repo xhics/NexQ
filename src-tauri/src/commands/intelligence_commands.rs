@@ -21,6 +21,10 @@ use crate::state::AppState;
 
 /// Compose instruction presets + custom text into a single string.
 /// Mirrors the frontend's `composeInstructions()` in aiActionsStore.ts.
+/// A cue card: keywords to glance at while speaking, then a first sentence to
+/// say at once. The overlay shows the "⚡" line apart and doesn't read it aloud.
+const CUE_CARD_INSTRUCTION: &str = "Start your answer with one line that begins with '⚡ ' and lists 3 to 5 keywords or figures to mention, separated by ' · '. Then write one short opening sentence the user can say right away. Then the rest of the answer.";
+
 pub(crate) fn compose_instructions(presets: &InstructionPresets, custom: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(tone) = &presets.tone {
@@ -44,6 +48,9 @@ pub(crate) fn compose_instructions(presets: &InstructionPresets, custom: &str) -
             other => format!("{} responses.", other),
         };
         parts.push(text);
+    }
+    if presets.cue.as_deref() == Some("keywords") {
+        parts.push(CUE_CARD_INSTRUCTION.to_string());
     }
     if presets.opinion.as_deref() == Some("add") {
         parts.push("After answering based on the provided context, add a short section '## My Take' with your own analysis, interpretation, or recommendation — clearly separated from the factual answer above.".to_string());
