@@ -141,6 +141,24 @@ struct RagRetrieval {
     total_candidates: usize,
 }
 
+/// Until when (unix ms) searches skip the embedder after it couldn't be
+/// reached: each failed attempt costs ~2 s before the answer even starts.
+static EMBEDDER_DOWN_UNTIL_MS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+const EMBEDDER_REST_MS: i64 = 60_000;
+
+fn embedder_resting() -> bool {
+    chrono::Utc::now().timestamp_millis() < EMBEDDER_DOWN_UNTIL_MS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// After a failed search: a connection failure rests the embedder for a while.
+fn note_search_error(error: &str) {
+    if error.contains("error sending request") || error.contains("onnect") {
+        let until = chrono::Utc::now().timestamp_millis() + EMBEDDER_REST_MS;
+        EMBEDDER_DOWN_UNTIL_MS.store(until, std::sync::atomic::Ordering::Relaxed);
+        log::warn!("RAG: embedder unreachable, searches skipped for {} s", EMBEDDER_REST_MS / 1000);
+    }
+}
+
 /// Search the indexed documents for `question_text` and the recent
 /// transcript (`transcript_excerpt`), keeping the `top_k` best chunks.
 async fn retrieve_rag(
@@ -168,7 +186,7 @@ async fn retrieve_rag(
             .map_or(true, |status| status.total_chunks > 0)
     });
 
-    if !(has_question || has_transcript) || !has_indexed_chunks {
+    if !(has_question || has_transcript) || !has_indexed_chunks || embedder_resting() {
         return Ok(out);
     }
     let (Some(rag_arc), Some(db_arc)) = (state.rag.as_ref(), state.database.as_ref()) else {
@@ -188,26 +206,26 @@ async fn retrieve_rag(
         out.query = Some(q.clone());
         match rag::RagManager::search_async(db_arc, q, &config, &embedder_url, &embedding_model).await {
             Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => log::warn!("RAG search (question-only) failed: {}", e),
+            Err(e) => { log::warn!("RAG search (question-only) failed: {}", e); note_search_error(&e); }
         }
     }
 
     // Search 2: question + transcript (contextual match)
-    if has_question && has_transcript {
+    if has_question && has_transcript && !embedder_resting() {
         let combined = format!("{}\n\n{}", question_text.as_ref().unwrap(), transcript_excerpt);
         if out.query.is_none() {
             out.query = Some(combined.clone());
         }
         match rag::RagManager::search_async(db_arc, &combined, &config, &embedder_url, &embedding_model).await {
             Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => log::warn!("RAG search (combined) failed: {}", e),
+            Err(e) => { log::warn!("RAG search (combined) failed: {}", e); note_search_error(&e); }
         }
     } else if !has_question && has_transcript {
         // No question at all — search with transcript only as last resort
         out.query = Some(transcript_excerpt.clone());
         match rag::RagManager::search_async(db_arc, &transcript_excerpt, &config, &embedder_url, &embedding_model).await {
             Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => log::warn!("RAG search (transcript-only) failed: {}", e),
+            Err(e) => { log::warn!("RAG search (transcript-only) failed: {}", e); note_search_error(&e); }
         }
     }
 
@@ -987,7 +1005,16 @@ pub async fn generate_assist(
             .filter(|q| !q.is_empty())
             .map(|q| q.to_string())
             .or_else(|| effective_question.as_ref().map(|q| q.text.clone()));
-        retrieve_rag(&state, question_text, tail_chars(&transcript_text, 500), rag_top_k).await?
+        // A stop lands at once: the search can take seconds (an unreachable
+        // embedder), and Auto-Answer's next answer is refused until this one lets go.
+        tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                drop(generation_guard);
+                return Ok(());
+            }
+            rag = retrieve_rag(&state, question_text, tail_chars(&transcript_text, 500), rag_top_k) => rag?,
+        }
     } else {
         RagRetrieval::default()
     };
