@@ -203,6 +203,10 @@ export interface AIInteraction {
   model: string;
   provider: string;
   latency_ms: number;
+  /** From the AI's start until its first words (ms), when measured. */
+  first_token_ms?: number;
+  /** From asking (a click, a shortcut, Auto-Answer) until the first words (ms), document search included. */
+  wait_ms?: number;
   timestamp: string;
 }
 
@@ -798,6 +802,8 @@ export interface LogEntry {
   status: LogEntryStatus;
   // Lifecycle timestamps
   startedAt: number;
+  /** When the answer was asked for (a click, a shortcut, Auto-Answer), before the document search. */
+  requestedAt?: number | null;
   firstTokenAt: number | null;
   completedAt: number | null;
   // Token accounting

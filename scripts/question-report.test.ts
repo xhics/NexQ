@@ -47,3 +47,24 @@ describe.runIf(!!dbPath)("question detection on your past meetings", () => {
     expect(rows.length).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe.runIf(!!dbPath)("answer timings on your past meetings", () => {
+  it("reports how long answers took, by action", async () => {
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath!, { readOnly: true });
+    const rows = db.prepare("SELECT ai_interactions FROM meetings").all() as Array<{ ai_interactions: string | null }>;
+    db.close();
+    type Saved = { mode: string; latency_ms?: number; first_token_ms?: number; wait_ms?: number; response?: string };
+    const all: Saved[] = rows.flatMap((r) => { try { return JSON.parse(r.ai_interactions ?? "[]") as Saved[]; } catch { return []; } });
+    const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null);
+    const show = (v: number | null, unit = " ms") => (v === null ? "–" : `${v}${unit}`);
+    const byMode = new Map<string, Saved[]>();
+    for (const s of all) byMode.set(s.mode, [...(byMode.get(s.mode) ?? []), s]);
+    const lines = [...byMode].map(([mode, list]) => {
+      const pick = (k: keyof Saved) => list.map((s) => s[k]).filter((v): v is number => typeof v === "number" && v > 0);
+      return `  ${mode.padEnd(10)} n ${String(list.length).padStart(3)} | wait ${show(median(pick("wait_ms"))).padStart(8)} | first words ${show(median(pick("first_token_ms"))).padStart(8)} | total ${show(median(pick("latency_ms"))).padStart(8)} | ${show(median(list.map((s) => (s.response ?? "").length)), " chars")}`;
+    });
+    console.log([`\n${all.length} answers (medians; wait = from asking to the first words):`, ...lines].join("\n"));
+    expect(all.length).toBeGreaterThanOrEqual(0);
+  });
+});

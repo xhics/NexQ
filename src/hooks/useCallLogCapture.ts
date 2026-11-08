@@ -15,6 +15,8 @@ import {
 import { useCallLogStore } from "../stores/callLogStore";
 import { useMeetingStore } from "../stores/meetingStore";
 import { saveMeetingAiInteractions } from "../lib/ipc";
+import { useStreamStore } from "../stores/streamStore";
+import { interactionTimings } from "../lib/interactionTimings";
 import type { IntelligenceMode, LogEntry } from "../lib/types";
 
 /**
@@ -70,6 +72,7 @@ export function useCallLogCapture() {
           model: e.model,
           provider: e.provider,
           latency_ms: e.latencyMs ?? 0,
+          ...interactionTimings(e),
           timestamp: new Date(e.timestamp).toISOString(),
         }));
       if (interactions.length > 0) {
@@ -96,6 +99,7 @@ export function useCallLogCapture() {
           model: event.model,
           status: "sending",
           startedAt: Date.now(),
+          requestedAt: useStreamStore.getState().requestStartedAt,
           firstTokenAt: null,
           completedAt: null,
           totalTokens: null,

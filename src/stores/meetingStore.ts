@@ -15,6 +15,7 @@ import { useConfigStore } from "./configStore";
 import { useTranscriptStore } from "./transcriptStore";
 import { initMeetingSpeakers, resetMeetingScopedStores } from "./resetMeeting";
 import { showToast } from "./toastStore";
+import { interactionTimings } from "../lib/interactionTimings";
 
 interface MeetingState {
   // View state
@@ -329,6 +330,7 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
               model: e.model,
               provider: e.provider,
               latency_ms: e.latencyMs ?? 0,
+              ...interactionTimings(e),
               timestamp: new Date(e.timestamp).toISOString(),
             }));
           if (interactions.length > 0) {
