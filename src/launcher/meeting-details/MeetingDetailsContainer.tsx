@@ -23,6 +23,7 @@ import { useActionItemStore } from "../../stores/actionItemStore";
 import { useSpeakerStore } from "../../stores/speakerStore";
 import { MeetingHeader } from "./MeetingHeader";
 import { MeetingTabBar, type MeetingTab } from "./MeetingTabBar";
+import { DebriefTab } from "./DebriefTab";
 import { TranscriptView } from "./TranscriptView";
 import { SummaryView } from "./SummaryView";
 import { AIInteractionLog } from "./AIInteractionLog";
@@ -475,6 +476,7 @@ export function MeetingDetails({ meetingId, onBack }: MeetingDetailsProps) {
         {activeTab === "summary" && (
           <SummaryView meeting={meeting} generation={summaryGeneration} onExport={handleExport} />
         )}
+        {activeTab === "debrief" && <DebriefTab meeting={meeting} />}
         {activeTab === "ask" && showAsk && (
           <AskMeetingTab
             chat={meetingChat}

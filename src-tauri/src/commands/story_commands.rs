@@ -51,6 +51,15 @@ pub async fn generate_star_stories(
     let language = language.filter(|l| !l.trim().is_empty()).unwrap_or_else(|| "French".to_string());
     let prompt = stories_prompt(&documents, job_description.as_deref().unwrap_or(""), &language, count.unwrap_or(10).clamp(3, 20));
 
+    let text = silent_completion(&app, prompt).await.map_err(|e| format!("Writing the stories failed: {e}"))?;
+    log::info!("STAR stories written ({} chars)", text.len());
+    Ok(text)
+}
+
+/// One prompt to the active model, its reply collected silently: never shown
+/// as the overlay's answer, never logged as an AI action.
+async fn silent_completion(app: &AppHandle, prompt: String) -> Result<String, String> {
+    let state = app.state::<AppState>();
     let llm_arc = state.llm.as_ref().ok_or("LLM router not initialized")?;
     let (provider_arc, model) = {
         let router = llm_arc.lock().map_err(|_| "LLM lock poisoned")?;
@@ -59,8 +68,6 @@ pub async fn generate_star_stories(
             router.active_model().to_string(),
         )
     };
-
-    // A silent stream: tokens go to this buffer, never to the overlay's answer.
     let buffer = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
     let sink_buffer = buffer.clone();
     let sink: crate::llm::provider::TokenSink = std::sync::Arc::new(move |token: &str| {
@@ -78,13 +85,46 @@ pub async fn generate_star_stories(
     provider
         .stream_completion(messages, &model, params, app.clone(), Some(sink))
         .await
-        .map_err(|e| format!("Writing the stories failed: {}", e))?;
-
+        .map_err(|e| e.to_string())?;
     let text = buffer.lock().map_err(|_| "Buffer lock poisoned".to_string())?.clone();
     if text.trim().is_empty() {
-        return Err("The AI returned no stories".to_string());
+        return Err("The AI returned nothing".to_string());
     }
-    log::info!("STAR stories written ({} chars)", text.len());
+    Ok(text)
+}
+
+/// Most transcript text sent for a debrief.
+const TRANSCRIPT_CHARS: usize = 60_000;
+
+fn debrief_prompt(transcript: &str, language: &str) -> String {
+    format!(
+        "Below is the transcript of a job interview. \"Them\" is the interviewer, \"You\" is the candidate. \
+         Write a debrief for the candidate, in {language}.\n\n\
+         For each real question the interviewer asked (skip small talk), give: the question; a one-sentence \
+         summary of what the candidate answered; the interviewer's score or feedback if they gave one (else null); \
+         2 or 3 concrete points to improve; and a better answer the candidate could give next time, in the first \
+         person, 45 to 60 seconds aloud, using only facts the candidate stated or that are plainly implied: never \
+         invent an employer, project or figure.\n\n\
+         Return ONLY a JSON array, no code fences, no other text. Each item: \
+         {{\"question\": string, \"answered\": string, \"feedback\": string or null, \
+         \"improve\": [string], \"better\": string}}\n\n\
+         Transcript:\n{transcript}"
+    )
+}
+
+/// A debrief of an interview: each question, what you answered, the feedback
+/// given, what to improve and a better answer. Returns the model's JSON text.
+#[command]
+pub async fn generate_interview_debrief(app: AppHandle, transcript: String, language: Option<String>) -> Result<String, String> {
+    if transcript.trim().is_empty() {
+        return Err("This meeting has no transcript".to_string());
+    }
+    let transcript: String = transcript.chars().take(TRANSCRIPT_CHARS).collect();
+    let language = language.filter(|l| !l.trim().is_empty()).unwrap_or_else(|| "French".to_string());
+    let text = silent_completion(&app, debrief_prompt(&transcript, &language))
+        .await
+        .map_err(|e| format!("Writing the debrief failed: {e}"))?;
+    log::info!("Interview debrief written ({} chars)", text.len());
     Ok(text)
 }
 
@@ -99,5 +139,13 @@ mod tests {
         assert!(with_job.contains("Architecte GenAI"));
         assert!(with_job.contains("write 8 STAR stories"));
         assert!(!stories_prompt("CV", "  ", "French", 8).contains("interviewing for"));
+    }
+
+    #[test]
+    fn the_debrief_prompt_names_who_is_who_and_forbids_invented_facts() {
+        let prompt = debrief_prompt("Them: Parle-moi de toi", "French");
+        assert!(prompt.contains("\"Them\" is the interviewer"));
+        assert!(prompt.contains("never invent"));
+        assert!(prompt.ends_with("Them: Parle-moi de toi"));
     }
 }

@@ -642,6 +642,7 @@ pub fn run() {
             translation_commands::set_translation_provider,
             translation_commands::translate_text,
             story_commands::generate_star_stories,
+            story_commands::generate_interview_debrief,
             translation_commands::translate_segments,
             translation_commands::translate_batch,
             translation_commands::detect_language,
