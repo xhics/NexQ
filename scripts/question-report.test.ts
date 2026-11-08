@@ -3,9 +3,10 @@
 // Reads the local NexQ database read-only and prints, for each line from the
 // other party, whether a question was found and what Auto-Answer would answer.
 // Runs only on demand (NEXQ_QUESTION_REPORT names the database), never in CI.
+// Kept out of src/ so the app type-check needs no Node types.
 
 import { describe, expect, it } from "vitest";
-import { isClosingQuestion, isFeedback, lastSentence, looksLikeQuestion, whatToAnswer } from "./QuestionDetector";
+import { isClosingQuestion, isFeedback, lastSentence, looksLikeQuestion, whatToAnswer } from "../src/overlay/QuestionDetector";
 
 const dbPath = process.env.NEXQ_QUESTION_REPORT;
 

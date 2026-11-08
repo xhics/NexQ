@@ -3,7 +3,8 @@ import { useStreamStore } from "../stores/streamStore";
 import { useTranscriptStore } from "../stores/transcriptStore";
 import { contentWords } from "../stores/storyStore";
 
-const isYou = (speaker: string) => speaker === "You";
+// Your lines are labelled "User" (the "You" party).
+const isYou = (speaker: string) => speaker === "User";
 
 /**
  * The words you have said since the current answer started, so the parts of

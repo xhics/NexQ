@@ -21,7 +21,7 @@ if (!existsSync(db)) {
 
 const result = spawnSync(
   "npx",
-  ["vitest", "run", "src/overlay/questionReport.test.ts", "--reporter=dot", "--silent=false"],
+  ["vitest", "run", "scripts/question-report.test.ts", "--reporter=dot", "--silent=false"],
   { stdio: "inherit", shell: true, env: { ...process.env, NEXQ_QUESTION_REPORT: db, NODE_NO_WARNINGS: "1" } },
 );
 process.exit(result.status ?? 1);

@@ -20,10 +20,10 @@ describe("answer timer", () => {
     act(() => { vi.advanceTimersByTime(1000); });
     expect(result.current).toBeNull();
 
-    act(() => { useTranscriptStore.setState({ segments: [line("t1", "Them", "Parle-moi de toi"), line("y1", "You", "Alors")] }); });
+    act(() => { useTranscriptStore.setState({ segments: [line("t1", "Them", "Parle-moi de toi"), line("y1", "User", "Alors")] }); });
     for (let i = 1; i <= 20; i++) {
       act(() => {
-        useTranscriptStore.setState({ segments: [line("t1", "Them", "…"), line("y1", "You", "Alors" + " mot".repeat(i))] });
+        useTranscriptStore.setState({ segments: [line("t1", "Them", "…"), line("y1", "User", "Alors" + " mot".repeat(i))] });
         vi.advanceTimersByTime(4500);
       });
     }
