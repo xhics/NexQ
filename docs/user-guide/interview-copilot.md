@@ -52,7 +52,9 @@ See [Using Context Intelligence (RAG)](rag-context.md) for more details on docum
 
 In **Settings > Prepared Answers**, click **Write stories from my CV** (paste the job offer first to aim them at it). NexQ writes about ten STAR stories (situation, task, action, result) from your documents, each with the questions it answers and keywords to glance at. Review and correct them before the interview: they say only what you validated.
 
-During the meeting, when a question matches a story, the story shows at once above the AI's answer, before the AI has written anything. Close it with its × if it doesn't fit.
+During the meeting, when a question matches a story, the story shows at once above the AI's answer, before the AI has written anything. Close it with its × if it doesn't fit. Stories are found by their words and, when Ollama runs, by meaning too: "Parle-moi d'un ratage" finds your story about a failure.
+
+**Your style**: rewrite a few stories the way you would say them, then click **Learn it from my edits**. NexQ compares its versions with yours and proposes general rules (tone, *tu* or *vous*, length, figures). Review them, then **Use these rules**: they go into the AI's instructions for every answer, in a block you can change or remove in Settings > AI Actions.
 
 ## Positioning the Overlay
 
