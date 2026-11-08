@@ -643,6 +643,7 @@ pub fn run() {
             translation_commands::translate_text,
             story_commands::generate_star_stories,
             story_commands::generate_interview_debrief,
+            story_commands::score_practice_answer,
             translation_commands::translate_segments,
             translation_commands::translate_batch,
             translation_commands::detect_language,

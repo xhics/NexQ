@@ -47,12 +47,15 @@ import {
   ScreenShareOff,
   PictureInPicture2,
   Headphones,
+  GraduationCap,
   Pause,
   Play,
 } from "lucide-react";
 import { useQuestionStore } from "../stores/questionStore";
 import { useLiveSpeech, stopSpeaking } from "../hooks/useLiveSpeech";
 import { answerTimeColor, formatAnswerTime, useAnswerTimer } from "../hooks/useAnswerTimer";
+import { PracticePanel, startPractice, stopPractice } from "./PracticePanel";
+import { usePracticeStore } from "../stores/practiceStore";
 import { toggleStealthMode } from "../hooks/useGlobalShortcut";
 import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, formatShortcut } from "../lib/shortcutLabel";
 import { formatDuration } from "../lib/utils";
@@ -79,6 +82,7 @@ export function OverlayView() {
   const speakAnswers = useConfigStore((s) => s.speakAnswers ?? false);
   const setSpeakAnswers = useConfigStore((s) => s.setSpeakAnswers);
   const answerMs = useAnswerTimer();
+  const practicing = usePracticeStore((s) => s.active);
   // Reads answers aloud as they are written, when turned on.
   useLiveSpeech();
   const enterCompact = useCallback(() => {
@@ -113,6 +117,7 @@ export function OverlayView() {
     setBookmarksOpen(false);
     setLayoutMode("split");
     if (compactRef.current) exitCompact();
+    if (usePracticeStore.getState().active) stopPractice();
   }, [activeMeetingId, exitCompact]);
   const cycleLayout = () => setLayoutMode((m) => m === "split" ? "ai" : m === "ai" ? "transcript" : "split");
   const toggleLog = useCallLogStore((s) => s.toggleOpen);
@@ -294,6 +299,7 @@ export function OverlayView() {
           />
           <HeaderBtn icon={autoPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />} active={autoPaused} onClick={() => { if (!autoPaused) stopSpeaking(); setAutoPaused(!autoPaused); }} tooltip={`${autoPaused ? "Resume Auto-Answer" : "Pause Auto-Answer"} (${formatShortcut(MEETING_SHORTCUTS.pause)})`} />
           <HeaderBtn icon={<Headphones className="h-3.5 w-3.5" />} active={speakAnswers} onClick={() => setSpeakAnswers(!speakAnswers)} tooltip={`${speakAnswers ? "Reading answers aloud — click to stop" : "Read answers aloud (in your headset)"} (${formatShortcut(MEETING_SHORTCUTS.speak)})`} />
+          <HeaderBtn icon={<GraduationCap className="h-3.5 w-3.5" />} active={practicing} onClick={() => { if (practicing) stopPractice(); else void startPractice(); }} tooltip={practicing ? "Stop practising" : "Practice: NexQ plays the interviewer and scores your answers"} />
           <HeaderBtn icon={<PictureInPicture2 className="h-3.5 w-3.5" />} onClick={enterCompact} tooltip={`Compact answer box (${formatShortcut(MEETING_SHORTCUTS.compact)}; double-click it to come back)`} />
           <HeaderBtn icon={<Eye className="h-3.5 w-3.5" />} onClick={cycleOpacity} tooltip={`Transparency: ${Math.round(overlayOpacity * 100)}% (click to cycle)`} />
           <HeaderBtn icon={<Settings className="h-3.5 w-3.5" />} onClick={() => setCurrentView("settings")} tooltip="Settings" />
@@ -390,6 +396,7 @@ export function OverlayView() {
         {/* ── RIGHT ── */}
         {layoutMode !== "transcript" ? (
         <div className="flex min-w-[180px] min-h-0 flex-1 basis-[220px] flex-col gap-2.5 overflow-hidden">
+          <PracticePanel />
           <QuestionPanel />
 
           {/* AI Response */}

@@ -69,6 +69,31 @@ export function lastSentenceEnd(text: string, from: number): number {
   return end;
 }
 
+/**
+ * Says `text` once (Practice mode asks its questions this way), whether or
+ * not answers are read aloud. Resolves when it has been said, or at once
+ * where the voice isn't available.
+ */
+export function speakOnce(text: string): Promise<void> {
+  if (typeof speechSynthesis === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    const { sttLanguage, speechRate } = useConfigStore.getState();
+    const lang = sttLanguage && sttLanguage !== "auto" ? sttLanguage : navigator.language || "fr-FR";
+    const utterance = new SpeechSynthesisUtterance(speakableText(text));
+    utterance.lang = lang;
+    utterance.rate = speechRate ?? 1.15;
+    const voice = pickVoice(lang);
+    if (voice) utterance.voice = voice;
+    utterance.onend = utterance.onerror = () => {
+      speaking = false;
+      speakingUntil = Date.now() + ECHO_TAIL_MS;
+      resolve();
+    };
+    speaking = true;
+    speechSynthesis.speak(utterance);
+  });
+}
+
 function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
   const voices = speechSynthesis.getVoices();
   const base = lang.slice(0, 2).toLowerCase();
