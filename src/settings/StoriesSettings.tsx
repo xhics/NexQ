@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
-import { generateStories, useStoryStore, type StarStory } from "../stores/storyStore";
+import { BookOpen, ChevronDown, ChevronRight, Loader2, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { generateStories, styleBlockOf, styleEdits, useStoryStore, withStyleBlock, type StarStory } from "../stores/storyStore";
+import { useAIActionsStore } from "../stores/aiActionsStore";
+import { learnStyle } from "../lib/ipc";
 import { showToast } from "../stores/toastStore";
 
 const LANGUAGES = [
@@ -96,6 +98,8 @@ export function StoriesSettings() {
         {error && <p className="text-xs text-destructive/80">{error}</p>}
       </div>
 
+      <StyleSection stories={stories} language={language} />
+
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">
@@ -154,6 +158,85 @@ function StoryItem({ story, open, onToggle }: { story: StarStory; open: boolean;
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Your style, learnt from your edits to AI-written answers: rules you review,
+ * then add to the AI's instructions (Settings > AI Actions, where you can
+ * still change or remove them).
+ */
+function StyleSection({ stories, language }: { stories: StarStory[]; language: string }) {
+  const edits = styleEdits(stories);
+  const instructions = useAIActionsStore((s) => s.configs.customInstructions);
+  const setInstructions = useAIActionsStore((s) => s.setCustomInstructions);
+  const applied = styleBlockOf(instructions);
+  const [rules, setRules] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const learn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setRules(await learnStyle(edits, language));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const apply = () => {
+    if (rules === null) return;
+    setInstructions(withStyleBlock(instructions, rules));
+    setRules(null);
+    showToast(rules.trim() ? "Your style is now in the AI's instructions" : "Your style was removed from the AI's instructions", "success");
+  };
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border/20 bg-card/20 p-3">
+      <div className="flex items-center gap-2">
+        <Wand2 className="h-3.5 w-3.5 text-primary" />
+        <span className="flex-1 text-xs font-medium text-foreground">Your style</span>
+        <button
+          type="button"
+          onClick={learn}
+          disabled={busy || edits.length === 0}
+          className="flex items-center gap-1.5 rounded-lg bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25 disabled:opacity-50"
+          title={edits.length === 0 ? "Rewrite a few answers below first" : undefined}
+        >
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {busy ? "Learning…" : `Learn it from my ${edits.length} ${edits.length === 1 ? "edit" : "edits"}`}
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        NexQ compares the answers it wrote with your rewrites and proposes rules (tone, length, figures…) for every answer.
+        You review them before they are used.
+      </p>
+      {applied && rules === null && (
+        <pre className="whitespace-pre-wrap rounded-md bg-secondary/20 p-2 text-[11px] text-foreground/80">{applied}</pre>
+      )}
+      {rules !== null && (
+        <div className="space-y-1.5">
+          <textarea className={`${field} h-28 resize-y`} value={rules} onChange={(e) => setRules(e.target.value)} aria-label="Style rules" />
+          <div className="flex gap-2">
+            <button type="button" onClick={apply} className="rounded-lg bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">
+              Use these rules
+            </button>
+            <button type="button" onClick={() => setRules(null)} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:bg-accent/40">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {applied && rules === null && (
+        <button type="button" onClick={() => { setInstructions(withStyleBlock(instructions, "")); showToast("Your style was removed from the AI's instructions", "info"); }} className="text-[11px] text-muted-foreground hover:text-destructive">
+          Remove from the AI's instructions
+        </button>
+      )}
+      {error && <p className="text-xs text-destructive/80">{error}</p>}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const AXES = ["échec|ratage|mal tourné", "agent|garde-fou", "salaire|prétentions"];
 function vec(text: string): number[] {
   const t = text.toLowerCase();
-  return AXES.map((axis) => (new RegExp(axis).test(t) ? 1 : 0.05)).concat([0.2]);
+  return [...AXES.map((axis): number => (new RegExp(axis).test(t) ? 1 : 0.05)), 0.2];
 }
 const embedTexts = vi.hoisted(() => vi.fn());
 vi.mock("../lib/ipc", () => ({ embedTexts }));

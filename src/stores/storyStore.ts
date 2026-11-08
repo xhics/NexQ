@@ -14,6 +14,8 @@ export interface StarStory {
   keywords: string[];
   /** The story, as the user would tell it. */
   answer: string;
+  /** The answer as the AI first wrote it: your edits to it teach NexQ your style. */
+  original?: string;
 }
 
 const STORE_FILE = "stories.json";
@@ -44,6 +46,7 @@ export function parseStories(text: string): StarStory[] {
       questions: strings(r.questions),
       keywords: strings(r.keywords),
       answer: String(r.answer ?? "").trim(),
+      original: String(r.answer ?? "").trim(),
     }))
     .filter((s) => s.title && s.answer);
 }
@@ -123,7 +126,9 @@ export const useStoryStore = create<StoryState>((set, get) => ({
     try {
       const store = await getStore();
       const saved = await store.get<StarStory[]>(KEY);
-      set({ stories: Array.isArray(saved) ? saved : [], loaded: true });
+      // Stories saved before edits were tracked: their edits count from now on.
+      const stories = (Array.isArray(saved) ? saved : []).map((s) => (s.original === undefined ? { ...s, original: s.answer } : s));
+      set({ stories, loaded: true });
       // Edited in the other window (Settings in the launcher): follow it.
       await store.onKeyChange<StarStory[]>(KEY, (value) => {
         if (Array.isArray(value)) set({ stories: value });
@@ -156,4 +161,47 @@ export async function generateStories(jobDescription: string, language: string):
   const { generateStarStories } = await import("../lib/ipc");
   const text = await generateStarStories(jobDescription, language);
   return parseStories(text);
+}
+
+// ── Your style, learnt from your edits ───────────────────────────────
+
+export interface StyleEdit {
+  before: string;
+  after: string;
+}
+
+/** Answers you rewrote, not just touched (at least a few words changed). */
+export function styleEdits(stories: StarStory[]): StyleEdit[] {
+  return stories
+    .filter((s) => s.original !== undefined && s.original.trim() && s.answer.trim())
+    .filter((s) => {
+      const before = s.original!.trim().split(/\s+/u);
+      const after = new Set(s.answer.trim().split(/\s+/u));
+      const kept = before.filter((w) => after.has(w)).length;
+      return Math.abs(before.length - after.size) >= 5 || kept / Math.max(before.length, 1) < 0.9;
+    })
+    .map((s) => ({ before: s.original!.trim(), after: s.answer.trim() }));
+}
+
+const STYLE_START = "[Mon style, appris de mes corrections]";
+const STYLE_END = "[/Mon style]";
+
+/** `instructions` with the learnt style block replaced (or added, or removed when `rules` is empty). */
+export function withStyleBlock(instructions: string, rules: string): string {
+  const start = instructions.indexOf(STYLE_START);
+  const end = instructions.indexOf(STYLE_END);
+  const without =
+    start >= 0 && end > start
+      ? (instructions.slice(0, start) + instructions.slice(end + STYLE_END.length)).replace(/\n{3,}/g, "\n\n").trim()
+      : instructions.trim();
+  if (!rules.trim()) return without;
+  const block = `${STYLE_START}\n${rules.trim()}\n${STYLE_END}`;
+  return without ? `${without}\n\n${block}` : block;
+}
+
+/** The rules currently in the learnt style block, if any. */
+export function styleBlockOf(instructions: string): string {
+  const start = instructions.indexOf(STYLE_START);
+  const end = instructions.indexOf(STYLE_END);
+  return start >= 0 && end > start ? instructions.slice(start + STYLE_START.length, end).trim() : "";
 }

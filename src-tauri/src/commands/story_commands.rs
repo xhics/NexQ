@@ -163,6 +163,52 @@ pub async fn score_practice_answer(
     silent_completion(&app, prompt).await.map_err(|e| format!("Scoring the answer failed: {e}"))
 }
 
+/// One answer as the AI wrote it and as the user rewrote it.
+#[derive(serde::Deserialize)]
+pub struct StyleEdit {
+    pub before: String,
+    pub after: String,
+}
+
+/// Most edits sent to learn a style from.
+const STYLE_EDITS: usize = 12;
+
+fn style_prompt(edits: &[StyleEdit], language: &str) -> String {
+    let pairs: String = edits
+        .iter()
+        .take(STYLE_EDITS)
+        .enumerate()
+        .map(|(i, e)| format!("--- Edit {}\nWritten by the AI:\n{}\n\nRewritten by the candidate:\n{}\n", i + 1, e.before, e.after))
+        .collect();
+    format!(
+        "A job candidate rewrote answers an AI wrote for them to say aloud in interviews. From their edits, infer \
+         how they want their answers written: tone, tu or vous, length, structure, vocabulary, figures, what they \
+         remove or add. Write 3 to 6 short, general rules in {language}, as instructions to the AI (\"Utilise…\", \
+         \"Évite…\"). Each rule must apply to any answer, never mention a specific project, employer or fact, and \
+         come from a pattern seen in the edits, not a guess.\n\n\
+         Return ONLY the rules, one per line, each starting with \"- \".\n\n{pairs}"
+    )
+}
+
+/// Rules describing how you want answers written, inferred from your edits to
+/// AI-written answers. Returns them one per line ("- …") for you to review.
+#[command]
+pub async fn learn_style(app: AppHandle, edits: Vec<StyleEdit>, language: Option<String>) -> Result<String, String> {
+    if edits.is_empty() {
+        return Err("Edit a few prepared answers first: your style is learnt from your edits".to_string());
+    }
+    let language = language.filter(|l| !l.trim().is_empty()).unwrap_or_else(|| "French".to_string());
+    let text = silent_completion(&app, style_prompt(&edits, &language))
+        .await
+        .map_err(|e| format!("Learning your style failed: {e}"))?;
+    let rules: Vec<&str> = text.lines().map(str::trim).filter(|l| l.starts_with("- ")).collect();
+    if rules.is_empty() {
+        return Err("The AI found no rule in your edits".to_string());
+    }
+    log::info!("Style learnt from {} edits: {} rules", edits.len().min(STYLE_EDITS), rules.len());
+    Ok(rules.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,6 +228,17 @@ mod tests {
         assert!(with.contains("Question: Parle-moi d'un échec"));
         assert!(with.contains("Ma réponse préparée"));
         assert!(!practice_prompt("Q", "A", " ", "French").contains("prepared (for reference"));
+    }
+
+    #[test]
+    fn the_style_prompt_shows_each_edit_and_asks_for_general_rules() {
+        let edits = vec![StyleEdit { before: "Nous avons mis en place".into(), after: "J'ai mis en place".into() }];
+        let prompt = style_prompt(&edits, "French");
+        assert!(prompt.contains("Written by the AI:\nNous avons mis en place"));
+        assert!(prompt.contains("Rewritten by the candidate:\nJ'ai mis en place"));
+        assert!(prompt.contains("never mention a specific project"));
+        let many: Vec<StyleEdit> = (0..20).map(|i| StyleEdit { before: format!("b{i}"), after: format!("a{i}") }).collect();
+        assert_eq!(style_prompt(&many, "French").matches("--- Edit").count(), STYLE_EDITS);
     }
 
     #[test]

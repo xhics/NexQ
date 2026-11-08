@@ -79,7 +79,7 @@ export function DebriefTab({ meeting }: { meeting: Meeting }) {
     const store = useStoryStore.getState();
     store.setStories([
       ...store.stories,
-      { id: crypto.randomUUID(), title: item.question.slice(0, 80), questions: [item.question], keywords: [], answer: item.better },
+      { id: crypto.randomUUID(), title: item.question.slice(0, 80), questions: [item.question], keywords: [], answer: item.better, original: item.better },
     ]);
     setSaved(new Set(saved).add(index));
     showToast("Saved to Prepared Answers", "success");

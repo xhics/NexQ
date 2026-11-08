@@ -646,6 +646,7 @@ pub fn run() {
             story_commands::generate_star_stories,
             story_commands::generate_interview_debrief,
             story_commands::score_practice_answer,
+            story_commands::learn_style,
             translation_commands::translate_segments,
             translation_commands::translate_batch,
             translation_commands::detect_language,

@@ -41,3 +41,36 @@ describe("prepared stories", () => {
     expect(matchStory("Pourquoi nous", stories)).toBeNull();
   });
 });
+
+describe("your style, from your edits", () => {
+  const base = { id: "s", title: "T", questions: [], keywords: [] };
+  const before = "Nous avons mis en place une plateforme d'automatisation qui a permis de réduire les délais de traitement des factures de manière significative pour le client.";
+
+  it("keeps the AI's version of what it writes", () => {
+    expect(parseStories('[{"title":"T","answer":"A"}]')[0].original).toBe("A");
+  });
+
+  it("counts answers you rewrote, not ones you only touched", async () => {
+    const { styleEdits } = await import("./storyStore");
+    const rewritten = "J'ai mis en place une plateforme d'automatisation : −30 % de délais sur les factures en six mois.";
+    const touched = before.replace("significative", "nette");
+    expect(styleEdits([
+      { ...base, answer: rewritten, original: before },
+      { ...base, id: "t", answer: touched, original: before },
+      { ...base, id: "u", answer: before, original: before },
+      { ...base, id: "v", answer: rewritten },
+    ])).toEqual([{ before, after: rewritten }]);
+  });
+
+  it("puts the rules in their own block of the instructions, replaced or removed later", async () => {
+    const { styleBlockOf, withStyleBlock } = await import("./storyStore");
+    const mine = "Je suis architecte GenAI.";
+    const once = withStyleBlock(mine, "- Utilise je, pas nous");
+    expect(once.startsWith(mine)).toBe(true);
+    expect(styleBlockOf(once)).toBe("- Utilise je, pas nous");
+    const twice = withStyleBlock(once, "- Un chiffre par réponse");
+    expect(styleBlockOf(twice)).toBe("- Un chiffre par réponse");
+    expect(twice.match(/Mon style, appris/g)).toHaveLength(1);
+    expect(withStyleBlock(twice, "")).toBe(mine);
+  });
+});

@@ -894,3 +894,8 @@ export async function warmUpEmbedder(): Promise<number> {
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   return invoke("embed_texts", { texts });
 }
+
+/** Rules for how you want answers written ("- …" per line), inferred from your edits. */
+export async function learnStyle(edits: Array<{ before: string; after: string }>, language: string): Promise<string> {
+  return invoke("learn_style", { edits, language });
+}
