@@ -177,6 +177,19 @@ export function isFeedback(text: string): boolean {
   return FEEDBACK_PATTERNS.some((re) => re.test(lower));
 }
 
+const CLOSING_QUESTIONS = [
+  /\b(avez-vous|as-tu|vous avez|tu as|aurais-tu|auriez-vous)\b[^.?!]*\bdes questions\b/u,
+  /\bdes questions (pour nous|pour moi|à (me|nous) poser|de (ton|votre) côté)(?!\p{L})/u,
+  /\b(une|d'autres|des) questions\?? ?(de (ton|votre) côté|pour (nous|moi))(?!\p{L})/u,
+  /\b(do you have|have you got|any) (any )?questions( for (us|me))?\b/u,
+];
+
+/** "Avez-vous des questions pour nous ?": the moment to ask yours, not to answer. */
+export function isClosingQuestion(text: string): boolean {
+  const lower = text.toLowerCase().replace(/’/g, "'");
+  return CLOSING_QUESTIONS.some((re) => re.test(lower));
+}
+
 /** Whether Auto-Answer answers every turn of the other party, not just questions. */
 const answersEveryTurn = () => {
   const d = useAIActionsStore.getState().configs.globalDefaults;
@@ -196,7 +209,10 @@ function startAutoAnswer(question: DetectedQuestion, segmentId: string | undefin
   }
   if (segmentId !== undefined) store.answerLine(question, segmentId);
   const requestId = crypto.randomUUID();
-  const mode = useAIActionsStore.getState().configs.globalDefaults.autoAnswerMode ?? "Assist";
+  // "Do you have any questions for us?": suggest questions to ask, not an answer.
+  const mode = isClosingQuestion(question.text)
+    ? "FollowUp"
+    : useAIActionsStore.getState().configs.globalDefaults.autoAnswerMode ?? "Assist";
   const done = runUserAction(mode, question.text, { requestId }).catch((err) => {
     // Refused: an answer started elsewhere in the meantime.
     if (!String(err).includes(REFUSED)) return;

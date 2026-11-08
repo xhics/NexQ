@@ -23,7 +23,7 @@ vi.mock("../lib/ipc", async (importOriginal) => ({
   cancelGeneration: vi.fn(() => Promise.resolve()),
 }));
 
-import { AUTO_TRIGGER_DELAY_MS, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer } from "./QuestionDetector";
+import { AUTO_TRIGGER_DELAY_MS, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer, isClosingQuestion } from "./QuestionDetector";
 import { runUserAction } from "../lib/userAction";
 import { cancelGeneration } from "../lib/ipc";
 import { useStreamStore } from "../stores/streamStore";
@@ -302,6 +302,24 @@ describe("Auto-Trigger", () => {
     expect(whatToAnswer("Très bonne réponse, neuf sur dix. Question suivante, parle-moi de ton dernier échec", true))
       .toBe("Question suivante, parle-moi de ton dernier échec");
     expect(whatToAnswer("Je te laisse développer sur ton dernier projet en production", true)).not.toBeNull();
+  });
+
+  it("suggests questions to ask when they ask whether you have any", () => {
+    for (const q of [
+      "Est-ce que tu as des questions pour nous ?", "Avez-vous des questions", "Bon, on arrive à la fin, as-tu des questions de ton côté",
+      "Do you have any questions for us?", "Des questions de votre côté ?",
+    ]) {
+      expect(isClosingQuestion(q), q).toBe(true);
+    }
+    for (const s of ["Je vais te poser des questions techniques", "Quelles questions te poses-tu sur l'architecture", "Tu as répondu à toutes les questions"]) {
+      expect(isClosingQuestion(s), s).toBe(false);
+    }
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true });
+    useTranscriptStore.setState({ segments: [seg("Merci. Est-ce que tu as des questions pour nous ?")] });
+    render(<QuestionDetector />);
+    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS));
+    expect(runUserAction).toHaveBeenCalledWith("FollowUp", "Est-ce que tu as des questions pour nous ?", expect.anything());
   });
 
   it("leaves short acknowledgements and statements alone unless set to every turn", () => {
