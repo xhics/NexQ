@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AnswerMarkdown } from "./CueLine";
 import { PreparedStory, usePreparedStory } from "./PreparedStory";
+import { useSaidSinceAnswer } from "../hooks/useSaidSinceAnswer";
 import { getModeLabel } from "../lib/utils";
 import type { AIResponse, StreamSource } from "../lib/types";
 import { useConfigStore } from "../stores/configStore";
@@ -75,6 +76,7 @@ export function AIResponsePanel() {
   // of jumping to the newest words.
   const readingSpeed = useConfigStore((s) => s.readingSpeed ?? 14);
   const prepared = usePreparedStory();
+  const said = useSaidSinceAnswer();
   const reading = useReadingScroll(scrollRef, activeTab === "current" ? currentContent : "", `${activeTab}:${prepared.story?.id ?? ""}`, readingSpeed);
 
   // Switch to "current" tab when a new request starts
@@ -216,7 +218,7 @@ export function AIResponsePanel() {
         {/* A prepared story for the question, at once, above the AI's answer */}
         {activeTab === "current" && prepared.story && (
           <div style={proseStyle}>
-            <PreparedStory story={prepared.story} fontSize={aiResponseFontSize} onHide={prepared.hide} />
+            <PreparedStory story={prepared.story} fontSize={aiResponseFontSize} onHide={prepared.hide} said={said} />
           </div>
         )}
 
@@ -226,7 +228,7 @@ export function AIResponsePanel() {
             <ResponseProgress />
             {currentContent && (
               <div className="prose prose-sm prose-invert max-w-none leading-relaxed" style={proseStyle}>
-                <AnswerMarkdown content={currentContent} cueSize={aiResponseFontSize + 2} />
+                <AnswerMarkdown content={currentContent} cueSize={aiResponseFontSize + 2} said={said} />
                 <span className="inline-block h-3 w-0.5 animate-pulse bg-primary/60 ml-0.5" />
               </div>
             )}
@@ -247,7 +249,7 @@ export function AIResponsePanel() {
               />
             )}
             <div className="prose prose-sm prose-invert max-w-none leading-relaxed" style={proseStyle}>
-              <AnswerMarkdown content={currentContent} cueSize={aiResponseFontSize + 2} />
+              <AnswerMarkdown content={currentContent} cueSize={aiResponseFontSize + 2} said={said} />
             </div>
             <SourcesList sources={currentSources} />
           </div>

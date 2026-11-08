@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AnswerMarkdown } from "./CueLine";
 import { PreparedStory, usePreparedStory } from "./PreparedStory";
+import { useSaidSinceAnswer } from "../hooks/useSaidSinceAnswer";
 import { answerTimeColor, formatAnswerTime, useAnswerTimer } from "../hooks/useAnswerTimer";
 import { Maximize2, Eye, Pause, Play, Headphones } from "lucide-react";
 import { stopSpeaking } from "../hooks/useLiveSpeech";
@@ -141,6 +142,7 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   // A prepared story for the question shows first, at once.
   const prepared = usePreparedStory();
   const answerMs = useAnswerTimer();
+  const said = useSaidSinceAnswer();
   const reading = useReadingScroll(scrollRef, content, prepared.story?.id ?? null, speed);
 
   const startDrag = (e: React.MouseEvent) => {
@@ -222,7 +224,7 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
       <div ref={scrollRef} {...reading} className="min-h-0 flex-1 overflow-y-auto px-3 py-2" style={{ scrollbarWidth: "none" }} aria-live="polite">
         {prepared.story && (
           <div style={{ color, textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.6)" }}>
-            <PreparedStory story={prepared.story} fontSize={fontSize + 3} onHide={prepared.hide} />
+            <PreparedStory story={prepared.story} fontSize={fontSize + 3} onHide={prepared.hide} said={said} />
           </div>
         )}
         {error ? (
@@ -232,7 +234,7 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
             className="prose prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0"
             style={{ fontSize: `${fontSize + 3}px`, color, lineHeight: 1.45, textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.6)" }}
           >
-            <AnswerMarkdown content={content} cueSize={fontSize + 6} />
+            <AnswerMarkdown content={content} cueSize={fontSize + 6} said={said} />
             {isStreaming && <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-primary/60" />}
           </div>
         ) : (

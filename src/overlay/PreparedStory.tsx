@@ -3,6 +3,7 @@ import { BookOpen, X } from "lucide-react";
 import { useQuestionStore } from "../stores/questionStore";
 import { matchStory, useStoryStore, type StarStory } from "../stores/storyStore";
 import { CueLine } from "./CueLine";
+import { covered } from "../hooks/useSaidSinceAnswer";
 
 /**
  * The prepared story that answers the newest question, if one does: shown
@@ -24,7 +25,8 @@ export function usePreparedStory(): { story: StarStory | null; hide: () => void 
   };
 }
 
-export function PreparedStory({ story, fontSize, onHide }: { story: StarStory; fontSize: number; onHide: () => void }) {
+export function PreparedStory({ story, fontSize, onHide, said }: { story: StarStory; fontSize: number; onHide: () => void; said?: Set<string> }) {
+  const sentences = story.answer.match(/[^.!?…]+[.!?…]*\s*/gu) ?? [story.answer];
   return (
     <div
       className="mb-2 rounded-md border border-emerald-400/30 bg-emerald-400/5 px-2 py-1.5"
@@ -44,9 +46,11 @@ export function PreparedStory({ story, fontSize, onHide }: { story: StarStory; f
           <X className="h-3 w-3" />
         </button>
       </div>
-      {story.keywords.length > 0 && <CueLine words={story.keywords} fontSize={fontSize + 1} />}
+      {story.keywords.length > 0 && <CueLine words={story.keywords} fontSize={fontSize + 1} said={said} />}
       <p className="whitespace-pre-line" style={{ fontSize: `${fontSize}px`, lineHeight: 1.45 }}>
-        {story.answer}
+        {sentences.map((part, i) => (
+          <span key={i} className={said && covered(part, said) ? "line-through opacity-40" : undefined}>{part}</span>
+        ))}
       </p>
     </div>
   );
