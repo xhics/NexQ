@@ -52,12 +52,50 @@ const TAG_QUESTIONS: &[&str] = &[
     "right", "okay", "ok", "yeah", "yep", "yes", "no", "nope", "sure", "correct", "true", "really",
     "agreed", "alright", "all right", "huh", "hmm", "hm", "eh", "see", "you see", "you know",
     "isn't it", "sorry", "pardon", "hello", "cool", "good",
+    "d'accord", "hein", "voilà", "c'est ça", "n'est-ce pas", "oui", "non", "vraiment", "allô", "bon",
+    "tu vois", "vous voyez", "ça va", "c'est bon", "tu sais", "vous savez",
 ];
 
 /// Words that can come before a tag ("So, right?").
 const TAG_LEAD_INS: &[&str] = &[
     "and", "so", "but", "well", "oh", "um", "uh", "okay", "ok", "yeah", "yes", "no",
+    "et", "donc", "mais", "alors", "bon", "euh", "oui", "non", "ah",
 ];
+
+// French question signals, kept in step with src/overlay/QuestionDetector.tsx.
+// French STT rarely writes the question mark, and spoken questions come after
+// openers ("Oui, deuxième question, comment tu…"), so each clause is checked.
+
+/// Words that ask at the start of a clause, after openers like "Oui," or "Alors,".
+const FRENCH_CLAUSE_STARTERS: &[&str] = &[
+    "comment", "pourquoi", "combien", "lequel", "laquelle", "lesquels", "lesquelles",
+    "parlez-moi", "parle-moi", "racontez-moi", "raconte-moi", "expliquez-moi", "explique-moi", "expliquez", "explique",
+    "décrivez", "décrivez-moi", "décris", "décris-moi", "dites-moi", "dis-moi", "présentez-vous", "présente-toi",
+    "donnez-moi", "donne-moi", "citez-moi", "cite-moi", "citez", "cite",
+];
+
+/// Ask only as the sentence's first word: inside a sentence they link ("un projet où…").
+const FRENCH_FIRST_WORD_STARTERS: &[&str] = &["où", "d'où", "qui", "quoi"];
+
+/// "Quel…" asks when it is about you ("quelle décision tu as prise", not "quelle chance").
+const FRENCH_QUEL: &[&str] = &["quel", "quelle", "quels", "quelles"];
+const FRENCH_YOU: &[&str] = &["tu", "toi", "ton", "ta", "tes", "vous", "votre", "vos"];
+const FRENCH_QUEL_VERBS: &[&str] = &[
+    "est", "sont", "serait", "seraient", "était", "étaient", "a été", "ont été", "sera", "seront",
+];
+
+const FRENCH_PATTERNS: &[&str] = &[
+    "est-ce que", "est-ce qu'", "qu'est-ce", "un exemple concret", "un exemple précis",
+    "nouvelle question", "question suivante", "prochaine question", "première question", "deuxième question",
+    "troisième question", "quatrième question", "cinquième question", "dernière question", "autre question",
+    "j'aimerais savoir", "je voudrais savoir", "j'aimerais comprendre", "je voudrais comprendre",
+    "je vous écoute", "je t'écoute",
+];
+
+const FRENCH_LEAD_INS: &[&str] = &["et", "mais", "donc", "alors", "puis", "ok", "okay", "bon", "oui", "ouais", "bien"];
+
+/// Inverted subject pronouns ("avez-vous", "pensez-vous", "a-t-il").
+const FRENCH_INVERSIONS: &[&str] = &["-vous", "-tu", "-t-il", "-t-elle", "-t-on"];
 
 /// Interview-specific patterns that indicate a question or prompt.
 const INTERVIEW_PATTERNS: &[&str] = &[
@@ -112,7 +150,7 @@ impl QuestionDetector {
             }
 
             // STT may omit question marks or use a full stop instead.
-            if is_cjk_question(trimmed) {
+            if is_cjk_question(trimmed) || is_french_question(trimmed) {
                 confidence = confidence.max(0.6);
             }
 
@@ -153,7 +191,7 @@ impl QuestionDetector {
 
 /// Whether a sentence is only a tag, with or without words leading into it.
 fn is_tag_question(sentence: &str) -> bool {
-    let lower = sentence.to_lowercase();
+    let lower = sentence.to_lowercase().replace('’', "'");
     let words: Vec<&str> = lower
         .split(|c: char| c.is_whitespace() || matches!(c, ',' | '.' | '?' | '？' | '!' | '…'))
         .filter(|word| !word.is_empty())
@@ -176,6 +214,48 @@ fn is_cjk_question(sentence: &str) -> bool {
         || JAPANESE_QUESTION_ENDINGS.iter().any(|ending| body.ends_with(ending))
         || (CHINESE_QUESTION_WORDS.iter().any(|word| body.contains(word))
             && !CHINESE_NON_QUESTION_PHRASES.iter().any(|phrase| body.contains(phrase)))
+}
+
+/// Whether a clause asks: its first word after openers, or "quel…" about you.
+fn french_clause_asks(clause: &str, first: bool) -> bool {
+    let mut words: Vec<&str> = clause.split_whitespace().collect();
+    while words.len() > 1 && FRENCH_LEAD_INS.contains(&words[0]) {
+        words.remove(0);
+    }
+    let head = words.first().copied().unwrap_or("");
+    if FRENCH_CLAUSE_STARTERS.contains(&head) || (first && FRENCH_FIRST_WORD_STARTERS.contains(&head)) {
+        return true;
+    }
+    if FRENCH_QUEL.contains(&head) {
+        let rest = words[1..].join(" ");
+        let about_you = words[1..].iter().any(|word| {
+            let word = word.trim_end_matches(['.', ',', ';', ':', '!', '?']);
+            FRENCH_YOU.contains(&word) || word.starts_with("t'")
+        });
+        let defining = FRENCH_QUEL_VERBS.iter().any(|verb| rest == *verb || rest.starts_with(&format!("{verb} ")));
+        return about_you || defining;
+    }
+    false
+}
+
+/// French question words for a sentence without a question mark.
+fn is_french_question(sentence: &str) -> bool {
+    let lower = sentence.to_lowercase().replace('’', "'");
+    let text = lower.trim_end_matches(['.', '!', '…']);
+    let inverted = text.split_whitespace().any(|word| {
+        let word = word.trim_end_matches(',');
+        word != "rendez-vous"
+            && FRENCH_INVERSIONS.iter().any(|pronoun| {
+                word.strip_suffix(pronoun)
+                    .is_some_and(|verb| !verb.is_empty() && verb.chars().all(char::is_alphabetic))
+            })
+    });
+    inverted
+        || FRENCH_PATTERNS.iter().any(|pattern| text.contains(pattern))
+        || text
+            .split([',', ';', ':'])
+            .enumerate()
+            .any(|(i, clause)| french_clause_asks(clause.trim(), i == 0))
 }
 
 /// Split text into sentences using common sentence terminators.
@@ -274,6 +354,51 @@ mod tests {
             questions.iter().map(|q| q.text.as_str()).collect::<Vec<_>>(),
             ["计划完成了吗？", "準備できましたか", "Can we start?"]
         );
+    }
+
+    #[test]
+    fn detects_french_questions_without_question_marks() {
+        for text in [
+            "Parlez-moi de votre dernier projet", "Pouvez-vous me décrire votre rôle",
+            "Qu'est-ce qui vous motive", "Qu’est-ce que vous attendez de ce poste",
+            "Comment gérez-vous les conflits", "Quelle est votre plus grande faiblesse",
+            "Avez-vous déjà travaillé avec UiPath", "Et vous, pensez-vous rester longtemps",
+            "Est-ce que vous connaissez Python", "Où vous voyez-vous dans cinq ans",
+        ] {
+            let questions = QuestionDetector::new().detect_questions(text, 0, "Them");
+            assert_eq!(questions.len(), 1, "{text}");
+            assert_eq!(questions[0].confidence, 0.6, "{text}");
+        }
+        for text in [
+            "Quand j'étais chez Capgemini, j'ai mené ce projet.", "Quelle chance d'avoir cette équipe",
+            "On a fixé un rendez-vous demain", "Merci beaucoup pour votre temps.",
+            "D'accord ?", "Hein ?", "Bon, d'accord ?", "C’est ça ?",
+        ] {
+            assert!(QuestionDetector::new().detect_questions(text, 0, "Them").is_empty(), "{text}");
+        }
+    }
+
+    #[test]
+    fn detects_spoken_french_questions_after_openers() {
+        for text in [
+            "Oui, deuxième question, comment tu t'assures que tes systèmes restent face aux pannes d'API",
+            "Ok, et si tu partais quand même sur l'agent, quel garde-fou concret tu mettais pour limiter les dérives",
+            "Alors, décris une fois où tu as dû choisir entre un workflow classique et une approche agentique",
+            "Oui bien sûr, alors raconte-moi une situation où tu as dû reprendre une architecture existante",
+            "Quelle décision tu as prise que tu as gardé",
+            "Et pourquoi ce choix plutôt qu'un autre",
+        ] {
+            assert_eq!(QuestionDetector::new().detect_questions(text, 0, "Them").len(), 1, "{text}");
+        }
+        for text in [
+            "Neuf sur dix, tu as une vraie approche d'architecte senior.",
+            "Oui, donc tu disais quand le processus est déterministe, tu gardes le workflow classique.",
+            "Tu expliques bien le contexte, l'échec et les leçons.",
+            "Je travaille sur un projet où l'on automatise la facturation",
+            "Quelle estime pour cette équipe",
+        ] {
+            assert!(QuestionDetector::new().detect_questions(text, 0, "Them").is_empty(), "{text}");
+        }
     }
 
     #[test]
