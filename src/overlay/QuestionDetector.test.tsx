@@ -23,7 +23,7 @@ vi.mock("../lib/ipc", async (importOriginal) => ({
   cancelGeneration: vi.fn(() => Promise.resolve()),
 }));
 
-import { AUTO_TRIGGER_DELAY_MS, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer, isClosingQuestion } from "./QuestionDetector";
+import { AUTO_TRIGGER_DELAY_MS, QUICK_TRIGGER_DELAY_MS, quietWait, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer, isClosingQuestion } from "./QuestionDetector";
 import { runUserAction } from "../lib/userAction";
 import { cancelGeneration } from "../lib/ipc";
 import { useStreamStore } from "../stores/streamStore";
@@ -247,7 +247,7 @@ describe("Auto-Answer without turn signals (Deepgram Nova and the others)", () =
     act(() => useTranscriptStore.setState({ segments: [seg("What would you do if the build broke?")] }));
     await settle();
     expect(cancelGeneration).toHaveBeenCalledWith(requestOf(0));
-    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS - 1); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(QUICK_TRIGGER_DELAY_MS - 1); });
     expect(runUserAction).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     await settle();
@@ -256,12 +256,18 @@ describe("Auto-Answer without turn signals (Deepgram Nova and the others)", () =
 });
 
 describe("Auto-Trigger", () => {
+  it("waits less after a question mark, the full wait otherwise", () => {
+    expect(quietWait("Comment tu as tranché ?")).toBe(QUICK_TRIGGER_DELAY_MS);
+    expect(quietWait("Comment tu as tranché")).toBe(AUTO_TRIGGER_DELAY_MS);
+  });
+
   it("answers a question once the other party has been quiet for a moment", () => {
     vi.useFakeTimers();
     setAutoTrigger(true);
     useTranscriptStore.setState({ segments: [seg("Thanks for joining. What would you do first?")] });
     render(<QuestionDetector />);
-    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS - 100));
+    // Closed with a question mark: the shorter wait.
+    act(() => vi.advanceTimersByTime(QUICK_TRIGGER_DELAY_MS - 100));
     expect(runUserAction).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(100));
     expect(runUserAction).toHaveBeenCalledWith("Assist", "What would you do first?", expect.anything());
@@ -344,7 +350,7 @@ describe("Auto-Trigger", () => {
     act(() => useTranscriptStore.setState({ segments: [seg("What would you do if the build broke?", false)] }));
     act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS - 500));
     act(() => useTranscriptStore.setState({ segments: [seg("What would you do if the build broke?")] }));
-    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS - 1));
+    act(() => vi.advanceTimersByTime(QUICK_TRIGGER_DELAY_MS - 1));
     expect(runUserAction).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(runUserAction).toHaveBeenCalledWith("Assist", "What would you do if the build broke?", expect.anything());
@@ -429,7 +435,7 @@ describe("QuestionPanel coming back (layout switch, Settings)", () => {
     setDefaults({ questionDetection: true, autoTrigger: true });
     useTranscriptStore.setState({ segments: [seg(question)] });
     const { unmount } = render(<QuestionPanel />);
-    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS - 1));
+    act(() => vi.advanceTimersByTime(QUICK_TRIGGER_DELAY_MS - 1));
     unmount();
 
     render(<QuestionPanel />);

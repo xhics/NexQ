@@ -18,6 +18,16 @@ import type { DetectedQuestion, TranscriptSegment, TranscriptUpdateEvent } from 
  * their question, so a question still being asked isn't answered half-way.
  */
 export const AUTO_TRIGGER_DELAY_MS = 1500;
+/**
+ * The same wait for a sentence the transcriber closed with a question mark:
+ * it marks the end of a question, so less quiet is needed to be sure.
+ */
+export const QUICK_TRIGGER_DELAY_MS = 900;
+
+/** How long Auto-Trigger waits after the other party's last words before answering `question`. */
+export function quietWait(question: string): number {
+  return /[?？]\s*$/u.test(question) ? QUICK_TRIGGER_DELAY_MS : AUTO_TRIGGER_DELAY_MS;
+}
 
 const isOtherParty = (speaker: string) => speaker === "Them" || speaker === "Interviewer";
 
@@ -381,7 +391,7 @@ export function QuestionDetector() {
   }, []);
   useEffect(() => {
     if (!waiting) return;
-    const timer = setTimeout(() => void inTurn(autoAssist), AUTO_TRIGGER_DELAY_MS);
+    const timer = setTimeout(() => void inTurn(autoAssist), quietWait(latest?.text ?? ""));
     return () => clearTimeout(timer);
   }, [waiting, latest?.text, otherPartyActivity, autoAssist]);
 

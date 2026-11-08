@@ -80,7 +80,7 @@ Question detection recognizes `?` and `？`, French questions without a question
 
 Detected questions appear as cards in the overlay. Click the card you need to get an answer. To have the newest question answered automatically, turn on **Auto-Answer** in Settings > AI Actions.
 
-For the fastest automatic answers, transcribe the interviewer with Cartesia or Deepgram Flux. Both tell NexQ when the interviewer has finished, so the answer starts right away instead of after 1.5 seconds of quiet. If the interviewer keeps going after a pause, NexQ drops the answer it started and answers the complete question. Press `Space`, or click a question or an action, at any time to get your own answer instead.
+For the fastest automatic answers, transcribe the interviewer with Cartesia or Deepgram Flux. Both tell NexQ when the interviewer has finished, so the answer starts right away instead of after 1.5 seconds of quiet (0.9 seconds after a question mark). If the interviewer keeps going after a pause, NexQ drops the answer it started and answers the complete question. Press `Space`, or click a question or an action, at any time to get your own answer instead.
 
 Auto-Answer can also answer **whenever the interviewer stops talking**, not only questions (Settings > AI Actions > Auto-Answer > Answer when). Feedback such as "Très bonne réponse, huit sur dix" or "je regarde et je te fais un retour" is left alone. **Answer with: Say** writes the words to speak, in the first person.
 
