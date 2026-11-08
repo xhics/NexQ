@@ -91,16 +91,27 @@ Auto-Answer can also answer **whenever the interviewer stops talking**, not only
 - **Cue card** (Settings > AI Actions > Cue card > Keywords first): each answer opens with 3 to 5 keywords shown large, then one short sentence you can say at once.
 - **Read aloud** (`Ctrl+Alt+L`, or the headphones button): NexQ reads each sentence in your headset as soon as it is written. On the default output, Windows 10 2004 and later leave NexQ's own voice out of the interviewer's audio, so it is never transcribed as theirs.
 - **Pause** (`Ctrl+Alt+P`): stops Auto-Answer and any reading; questions still show as cards to click.
+- **What you already said** is struck out of the answer (keywords, list items, sentences), so what is left to say stands out.
+- **Answer timer**: ⏱ shows how long you have been answering, amber from 90 seconds and red from 2 minutes.
+- When the interviewer asks **"Avez-vous des questions pour nous ?"**, NexQ suggests questions to ask instead of an answer.
+- A **prepared answer** that matches the question is read aloud at once (when reading aloud is on), instead of the AI's.
 
 **Important**: Do not stare at the overlay. Glance at it naturally, the way you would glance at notes. Maintain eye contact with your camera.
+
+### Before the interview
+
+- **Check everything** in the Start Meeting window tests your microphone, the interviewer's audio, transcription, the AI, Ollama, your CV's indexing, prepared answers and the backup AI, and says how to fix what fails.
+- **Practice** (graduation cap in the overlay header, during a meeting): NexQ plays the interviewer. It asks your prepared answers' questions aloud, listens to your answer, and once you pause scores it out of 10 with feedback and a better answer.
+- **Without Internet**: if the online AI can't be reached, the answer is retried on a local Ollama model (for example `ollama pull qwen2.5:3b`), and answers stay local for a minute before trying online again.
 
 ## After the Interview
 
 1. Press `Ctrl+M` to end the meeting
 2. **Review the full transcript** in the Launcher -- every word from both sides is saved
-3. Check the **AI Call Log** sidebar for all AI suggestions that were generated during the session
-4. **Export or copy** the transcript for your notes or follow-up preparation
-5. The meeting summary includes key discussion points, questions asked, and action items
+3. Open the meeting's **Debrief** tab: each question, what you answered, the feedback you got, what to improve and a better answer. **Keep as a prepared answer** adds it to Settings > Prepared Answers for next time
+4. Check the **AI Call Log** sidebar for all AI suggestions that were generated during the session
+5. **Export or copy** the transcript for your notes or follow-up preparation
+6. The meeting summary includes key discussion points, questions asked, and action items
 
 ## Tips
 
