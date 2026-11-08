@@ -289,6 +289,21 @@ describe("Auto-Trigger", () => {
     setDefaults({ autoAnswerTrigger: "questions" });
   });
 
+  it("doesn't answer an evaluator's feedback or 'let me check', but answers the question after it", () => {
+    for (const s of [
+      "Très bonne réponse. Neuf sur dix, tu as une vraie approche d'architecte senior.",
+      "Très bien, je te donne huit virgule cinq sur dix. Montre une vraie maturité.",
+      "Merci, je regarde et je te fais un retour.",
+      "D'accord, je vois merci, je synthétise ça et je reviens.",
+      "C'est solide, je te mets 8/10 pour cette partie.",
+    ]) {
+      expect(whatToAnswer(s, true), s).toBeNull();
+    }
+    expect(whatToAnswer("Très bonne réponse, neuf sur dix. Question suivante, parle-moi de ton dernier échec", true))
+      .toBe("Question suivante, parle-moi de ton dernier échec");
+    expect(whatToAnswer("Je te laisse développer sur ton dernier projet en production", true)).not.toBeNull();
+  });
+
   it("leaves short acknowledgements and statements alone unless set to every turn", () => {
     expect(whatToAnswer("Oui, vas-y.", true)).toBeNull();
     expect(whatToAnswer("D'accord ?", true)).toBeNull();

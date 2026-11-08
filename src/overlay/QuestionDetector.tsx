@@ -159,7 +159,22 @@ export function whatToAnswer(text: string, everyTurn: boolean): string | null {
   }
   const said = tail.join(" ");
   if (isTagQuestion(said) || said.split(/\s+/u).filter(Boolean).length < TURN_MIN_WORDS) return null;
+  if (isFeedback(said)) return null;
   return said;
+}
+
+// An evaluator's feedback or "let me check" asks for no answer. A question
+// in the same turn is found first, so "Bonne réponse. Question suivante…" is answered.
+const FEEDBACK_PATTERNS = [
+  /\b(sur dix|sur 10)\b/u, /\b\d+(?:[.,]\d+)?\s*\/\s*10\b/u, /\b(très )?bonne réponse\b/u, /\bje (te|vous) (donne|mets)\b/u,
+  /\bje (regarde|vérifie|note|synthétise|reviens|réfléchis)\b/u, /\bj'évalue\b/u, /\bje (te|vous) fais un retour\b/u,
+  /\b(out of ten|out of 10|good answer|great answer|let me check|let me think)\b/u,
+];
+
+/** Whether a turn is feedback or a hold ("je regarde", "huit sur dix"), not something to answer. */
+export function isFeedback(text: string): boolean {
+  const lower = text.toLowerCase().replace(/’/g, "'");
+  return FEEDBACK_PATTERNS.some((re) => re.test(lower));
 }
 
 /** Whether Auto-Answer answers every turn of the other party, not just questions. */
