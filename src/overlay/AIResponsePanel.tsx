@@ -19,6 +19,7 @@ import { ColorPickerButton } from "../components/ColorPickerButton";
 import { ResponseProgress } from "./ResponseProgress";
 import { ResponseHistoryList } from "./ResponseHistoryList";
 import { formatDuration } from "./responseFormat";
+import { useReadingScroll } from "../hooks/useReadingScroll";
 
 /** "current", "resp-<id>" (a history answer) or "pinned-<id>". */
 type TabId = "current" | `resp-${string}` | `pinned-${string}`;
@@ -70,12 +71,10 @@ export function AIResponsePanel() {
   // A request in flight: clicked (sending) or streaming.
   const inFlight = isStreaming || phase !== "idle";
 
-  // Auto-scroll during streaming
-  useEffect(() => {
-    if (isStreaming && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [currentContent, isStreaming]);
+  // Reading pace: the answer starts at the top and scrolls gently, instead
+  // of jumping to the newest words.
+  const readingSpeed = useConfigStore((s) => s.readingSpeed ?? 14);
+  const reading = useReadingScroll(scrollRef, activeTab === "current" ? currentContent : "", activeTab, readingSpeed);
 
   // Switch to "current" tab when a new request starts
   useEffect(() => {
@@ -212,7 +211,7 @@ export function AIResponsePanel() {
           onClose={closeHistory}
         />
       )}
-      <div ref={scrollRef} className="absolute inset-0 overflow-y-auto" role="tabpanel" aria-label="AI response content">
+      <div ref={scrollRef} {...reading} className="absolute inset-0 overflow-y-auto" role="tabpanel" aria-label="AI response content">
         {/* Request in flight: progress, then the words as they arrive */}
         {activeTab === "current" && inFlight && (
           <div className="space-y-2.5" aria-atomic="false">

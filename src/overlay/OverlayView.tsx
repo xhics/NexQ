@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMeetingStore } from "../stores/meetingStore";
 import { useScenarioStore } from "../stores/scenarioStore";
 import { useCallLogStore } from "../stores/callLogStore";
@@ -8,6 +8,8 @@ import { translateBatch } from "../lib/ipc";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { QuestionPanel } from "./QuestionDetector";
 import { AIResponsePanel } from "./AIResponsePanel";
+import { CompactAnswer, enterCompactWindow, leaveCompactWindow } from "./CompactAnswer";
+import { logToFile } from "../lib/logger";
 import { ModeButtons } from "./ModeButtons";
 import { AskInput } from "./AskInput";
 import { ServiceStatusBar } from "../components/ServiceStatusBar";
@@ -43,7 +45,13 @@ import {
   Eye,
   ScreenShare,
   ScreenShareOff,
+  PictureInPicture2,
+  Headphones,
+  Pause,
+  Play,
 } from "lucide-react";
+import { useQuestionStore } from "../stores/questionStore";
+import { useLiveSpeech, stopSpeaking } from "../hooks/useLiveSpeech";
 import { toggleStealthMode } from "../hooks/useGlobalShortcut";
 import { formatShortcut } from "../lib/shortcutLabel";
 import { formatDuration } from "../lib/utils";
@@ -62,6 +70,30 @@ export function OverlayView() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [layoutMode, setLayoutMode] = useState<"split" | "ai" | "transcript">("split");
+  // Compact: the answer alone in a small box. The full view stays mounted
+  // underneath (hidden), so question detection and Auto-Answer keep running.
+  const [compact, setCompact] = useState(false);
+  const autoPaused = useQuestionStore((s) => s.paused);
+  const setAutoPaused = useQuestionStore((s) => s.setPaused);
+  const speakAnswers = useConfigStore((s) => s.speakAnswers ?? false);
+  const setSpeakAnswers = useConfigStore((s) => s.setSpeakAnswers);
+  // Reads answers aloud as they are written, when turned on.
+  useLiveSpeech();
+  const enterCompact = useCallback(() => {
+    setCompact(true);
+    enterCompactWindow().catch((err) => logToFile("warn", "overlay", `Compact box: ${err}`));
+  }, []);
+  const exitCompact = useCallback(() => {
+    setCompact(false);
+    leaveCompactWindow().catch((err) => logToFile("warn", "overlay", `Compact box: ${err}`));
+  }, []);
+  // Never leave the window box-sized: a new meeting, Settings or the end of
+  // the meeting gets the full overlay back.
+  const compactRef = useRef(false);
+  compactRef.current = compact;
+  useEffect(() => () => {
+    if (compactRef.current) leaveCompactWindow().catch(() => {});
+  }, []);
 
   // The overlay window stays mounted between meetings, so reset its local UI
   // state whenever a new meeting starts (panels, layout, ask input).
@@ -72,7 +104,8 @@ export function OverlayView() {
     setStatsOpen(false);
     setBookmarksOpen(false);
     setLayoutMode("split");
-  }, [activeMeetingId]);
+    if (compactRef.current) exitCompact();
+  }, [activeMeetingId, exitCompact]);
   const cycleLayout = () => setLayoutMode((m) => m === "split" ? "ai" : m === "ai" ? "transcript" : "split");
   const toggleLog = useCallLogStore((s) => s.toggleOpen);
   const logOpen = useCallLogStore((s) => s.isOpen);
@@ -161,7 +194,9 @@ export function OverlayView() {
   const meetingTitle = activeMeeting?.title || "NexQ";
 
   return (
-    <div className="overlay-bg flex h-full flex-col rounded-xl border border-border/20 shadow-xl" style={{ background: `hsl(var(--background) / ${overlayOpacity})`, backdropFilter: overlayOpacity > 0.7 ? "blur(12px) saturate(1.1)" : "none" }}>
+    <>
+    {compact && <CompactAnswer onExit={exitCompact} />}
+    <div className={`overlay-bg flex h-full flex-col rounded-xl${compact ? " hidden" : ""} border border-white/30 shadow-xl ring-1 ring-black/30`} style={{ background: `hsl(var(--background) / ${overlayOpacity})`, backdropFilter: overlayOpacity > 0.7 ? "blur(12px) saturate(1.1)" : "none" }}>
 
       {/* ═══ HEADER ═══ */}
       <div
@@ -244,6 +279,9 @@ export function OverlayView() {
             onClick={() => { toggleStealthMode().catch(() => {}); }}
             tooltip={`${stealthMode ? "Hidden from screen share — click to show" : "Visible in screen share — click to hide"} (${formatShortcut(stealthShortcut)})`}
           />
+          <HeaderBtn icon={autoPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />} active={autoPaused} onClick={() => { if (!autoPaused) stopSpeaking(); setAutoPaused(!autoPaused); }} tooltip={autoPaused ? "Resume Auto-Answer" : "Pause Auto-Answer"} />
+          <HeaderBtn icon={<Headphones className="h-3.5 w-3.5" />} active={speakAnswers} onClick={() => setSpeakAnswers(!speakAnswers)} tooltip={speakAnswers ? "Reading answers aloud — click to stop" : "Read answers aloud (in your headset)"} />
+          <HeaderBtn icon={<PictureInPicture2 className="h-3.5 w-3.5" />} onClick={enterCompact} tooltip="Compact answer box (double-click it to come back)" />
           <HeaderBtn icon={<Eye className="h-3.5 w-3.5" />} onClick={cycleOpacity} tooltip={`Transparency: ${Math.round(overlayOpacity * 100)}% (click to cycle)`} />
           <HeaderBtn icon={<Settings className="h-3.5 w-3.5" />} onClick={() => setCurrentView("settings")} tooltip="Settings" />
           <HeaderBtn icon={<Minus className="h-3.5 w-3.5" />} onClick={handleMinimizeToDashboard} tooltip="Minimize to Dashboard (Ctrl+B brings it back)" />
@@ -395,6 +433,7 @@ export function OverlayView() {
         <ServiceStatusBar compact />
       </div>
     </div>
+    </>
   );
 }
 

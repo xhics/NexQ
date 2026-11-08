@@ -1,0 +1,125 @@
+import { useEffect } from "react";
+import { useStreamStore } from "../stores/streamStore";
+import { useConfigStore } from "../stores/configStore";
+import { logToFile } from "../lib/logger";
+
+/**
+ * After the voice stops, its echo can still be in the transcript this long:
+ * the voice plays on the output NexQ also records for the other party.
+ */
+const ECHO_TAIL_MS = 1500;
+let speakingUntil = 0;
+let speaking = false;
+
+/** Whether NexQ's own voice is (or was just) playing: lines heard now may be it. */
+export function isSpeakingAnswer(): boolean {
+  return speaking || Date.now() < speakingUntil;
+}
+
+/** Stops the voice now. */
+export function stopSpeaking(): void {
+  if (typeof speechSynthesis === "undefined") return;
+  speechSynthesis.cancel();
+  speaking = false;
+  speakingUntil = Date.now() + ECHO_TAIL_MS;
+}
+
+/** Markdown to plain words for the voice. */
+export function speakableText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*(?:[-*+•]|\d+[.)])\s+/gm, "")
+    .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1")
+    .replace(/\|/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Where the text read so far may end: after the last finished sentence or
+ * line in `text` from `from` on, or -1 when none has finished yet. A full stop
+ * counts only before a space or a new line, so "3.5" and "v2.1" aren't split.
+ */
+export function lastSentenceEnd(text: string, from: number): number {
+  let end = -1;
+  const re = /[.!?…:;](?=\s)|\n/g;
+  re.lastIndex = from;
+  for (let m = re.exec(text); m; m = re.exec(text)) end = m.index + m[0].length;
+  return end;
+}
+
+function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
+  const voices = speechSynthesis.getVoices();
+  const base = lang.slice(0, 2).toLowerCase();
+  const matching = voices.filter((v) => v.lang.toLowerCase().startsWith(base));
+  return (
+    matching.find((v) => v.lang.toLowerCase() === lang.toLowerCase() && /natural|online/i.test(v.name))
+    ?? matching.find((v) => v.lang.toLowerCase() === lang.toLowerCase())
+    ?? matching[0]
+  );
+}
+
+/**
+ * Reads the answer aloud while it is written: each sentence as soon as it is
+ * finished, not the whole answer at the end. A new answer stops the old one.
+ */
+export function useLiveSpeech(): void {
+  const enabled = useConfigStore((s) => s.speakAnswers ?? false);
+
+  useEffect(() => {
+    if (!enabled || typeof speechSynthesis === "undefined") return;
+    // The voice list loads late in WebView2.
+    speechSynthesis.getVoices();
+    // An answer already on screen isn't read back: only what comes next.
+    let lastContent = useStreamStore.getState().currentContent ?? "";
+    let spoken = lastContent.length;
+
+    const say = (chunk: string) => {
+      const words = speakableText(chunk);
+      if (!/[\p{L}\p{N}]/u.test(words)) return;
+      const { sttLanguage, speechRate } = useConfigStore.getState();
+      const lang = sttLanguage && sttLanguage !== "auto" ? sttLanguage : navigator.language || "fr-FR";
+      const utterance = new SpeechSynthesisUtterance(words);
+      utterance.lang = lang;
+      utterance.rate = speechRate ?? 1.15;
+      const voice = pickVoice(lang);
+      if (voice) utterance.voice = voice;
+      utterance.onstart = () => { speaking = true; };
+      utterance.onend = utterance.onerror = () => {
+        if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+          speaking = false;
+          speakingUntil = Date.now() + ECHO_TAIL_MS;
+        }
+      };
+      speaking = true;
+      speechSynthesis.speak(utterance);
+    };
+
+    const onChange = (state: ReturnType<typeof useStreamStore.getState>) => {
+      const content = state.currentContent ?? "";
+      // A new answer (or the old one dropped): stop and start over.
+      if (content.length < lastContent.length || !content.startsWith(lastContent.slice(0, 40))) {
+        if (spoken > 0 || speaking) stopSpeaking();
+        spoken = 0;
+      }
+      lastContent = content;
+      const done = !state.isStreaming && state.phase === "idle";
+      const end = done ? content.length : lastSentenceEnd(content, spoken);
+      if (end > spoken) {
+        say(content.slice(spoken, end));
+        spoken = end;
+      }
+    };
+
+    const unsubscribe = useStreamStore.subscribe(onChange);
+    logToFile("info", "speech", "Reading answers aloud");
+    return () => {
+      unsubscribe();
+      stopSpeaking();
+    };
+  }, [enabled]);
+}

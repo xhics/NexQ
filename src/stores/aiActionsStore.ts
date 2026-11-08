@@ -62,6 +62,8 @@ function createDefaultConfigs(): AllActionConfigs {
       temperature: 0.3,
       questionDetection: true,
       autoTrigger: false,
+      autoAnswerMode: "Assist",
+      autoAnswerTrigger: "questions",
     },
     customInstructions: "",
     instructionPresets: { tone: null, format: null, length: null, opinion: null },

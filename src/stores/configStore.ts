@@ -274,6 +274,14 @@ interface ConfigState {
 
   // Overlay appearance
   overlayOpacity: number;
+  /** Background of the compact answer box (0 = invisible). */
+  compactOpacity: number;
+  /** How fast an answer scrolls as you read it (px per second). */
+  readingSpeed: number;
+  /** Read answers aloud while they are written. */
+  speakAnswers: boolean;
+  /** Voice speed for answers read aloud (1 = normal). */
+  speechRate: number;
 
   // Transcript scope of user actions (overlay picker)
   contextScope: ContextScopeSetting;
@@ -382,6 +390,10 @@ interface ConfigState {
   setAiResponseHPad: (v: number) => void;
   setAiResponseAlign: (align: "left" | "center" | "right") => void;
   setOverlayOpacity: (opacity: number) => void;
+  setCompactOpacity: (opacity: number) => void;
+  setReadingSpeed: (speed: number) => void;
+  setSpeakAnswers: (on: boolean) => void;
+  setSpeechRate: (rate: number) => void;
   setContextScope: (scope: ContextScopeSetting) => void;
   setContextScopeSticky: (sticky: boolean) => void;
   setShowPostMeetingTranslation: (enabled: boolean) => void;
@@ -465,6 +477,10 @@ export const useConfigStore = create<ConfigState>((set) => ({
   aiResponseHPad: 0,
   aiResponseAlign: "left" as const,
   overlayOpacity: 0.65,
+  compactOpacity: 0,
+  readingSpeed: 14,
+  speakAnswers: false,
+  speechRate: 1.15,
   contextScope: DEFAULT_CONTEXT_SCOPE,
   contextScopeSticky: true,
   showPostMeetingTranslation: true,
@@ -847,6 +863,22 @@ export const useConfigStore = create<ConfigState>((set) => ({
     set({ overlayOpacity: opacity });
     persistValue("overlayOpacity", opacity);
   },
+  setCompactOpacity: (opacity) => {
+    set({ compactOpacity: opacity });
+    persistValue("compactOpacity", opacity);
+  },
+  setReadingSpeed: (speed) => {
+    set({ readingSpeed: speed });
+    persistValue("readingSpeed", speed);
+  },
+  setSpeakAnswers: (on) => {
+    set({ speakAnswers: on });
+    persistValue("speakAnswers", on);
+  },
+  setSpeechRate: (rate) => {
+    set({ speechRate: rate });
+    persistValue("speechRate", rate);
+  },
   setContextScope: (scope) => {
     const next = normalizeContextScope(scope);
     set({ contextScope: next });
@@ -983,6 +1015,10 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const aiResponseHPad = await store.get<number>("aiResponseHPad");
       const aiResponseAlign = await store.get<string>("aiResponseAlign");
       const overlayOpacity = await store.get<number>("overlayOpacity");
+      const compactOpacity = await store.get<number>("compactOpacity");
+      const readingSpeed = await store.get<number>("readingSpeed");
+      const speakAnswers = await store.get<boolean>("speakAnswers");
+      const speechRate = await store.get<number>("speechRate");
       const contextScope = await store.get<ContextScopeSetting>("contextScope");
       const contextScopeSticky = await store.get<boolean>("contextScopeSticky");
       const showPostMeetingTranslation = await store.get<boolean>("showPostMeetingTranslation");
@@ -1162,6 +1198,10 @@ export const useConfigStore = create<ConfigState>((set) => ({
         aiResponseHPad: aiResponseHPad ?? 0,
         aiResponseAlign: (aiResponseAlign as "left" | "center" | "right") ?? "left",
         overlayOpacity: overlayOpacity ?? 0.65,
+        compactOpacity: compactOpacity ?? 0,
+        readingSpeed: readingSpeed ?? 14,
+        speakAnswers: speakAnswers ?? false,
+        speechRate: speechRate ?? 1.15,
         contextScope: normalizeContextScope(contextScope),
         contextScopeSticky: contextScopeSticky ?? true,
         sttLanguage: sttLanguage ?? "en-US",

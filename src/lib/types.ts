@@ -938,6 +938,10 @@ export interface GlobalDefaults {
   temperature: number;
   questionDetection: boolean;
   autoTrigger: boolean;
+  /** The action Auto-Answer runs: an answer (Assist) or the words to say (WhatToSay). */
+  autoAnswerMode: "Assist" | "WhatToSay";
+  /** When Auto-Answer answers: detected questions only, or whenever the other party stops talking. */
+  autoAnswerTrigger: "questions" | "turn";
 }
 
 export interface InstructionPresets {

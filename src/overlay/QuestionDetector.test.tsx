@@ -23,7 +23,7 @@ vi.mock("../lib/ipc", async (importOriginal) => ({
   cancelGeneration: vi.fn(() => Promise.resolve()),
 }));
 
-import { AUTO_TRIGGER_DELAY_MS, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion } from "./QuestionDetector";
+import { AUTO_TRIGGER_DELAY_MS, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer } from "./QuestionDetector";
 import { runUserAction } from "../lib/userAction";
 import { cancelGeneration } from "../lib/ipc";
 import { useStreamStore } from "../stores/streamStore";
@@ -269,6 +269,33 @@ describe("Auto-Trigger", () => {
     expect(runUserAction).toHaveBeenCalledTimes(1);
   });
 
+  it("answers with the words to say when Auto-Answer is set to Say, French questions included", () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerMode: "WhatToSay" });
+    useTranscriptStore.setState({ segments: [seg("Merci d'être là. Parlez-moi de votre dernier projet")] });
+    render(<QuestionDetector />);
+    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS));
+    expect(runUserAction).toHaveBeenCalledWith("WhatToSay", "Parlez-moi de votre dernier projet", expect.anything());
+    setDefaults({ autoAnswerMode: "Assist" });
+  });
+
+  it("answers whenever they stop talking when set to, question or not", () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerTrigger: "turn" });
+    useTranscriptStore.setState({ segments: [seg("Très bien. Je te laisse développer sur ton dernier projet")] });
+    render(<QuestionDetector />);
+    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS));
+    expect(runUserAction).toHaveBeenCalledWith("Assist", "Très bien. Je te laisse développer sur ton dernier projet", expect.anything());
+    setDefaults({ autoAnswerTrigger: "questions" });
+  });
+
+  it("leaves short acknowledgements and statements alone unless set to every turn", () => {
+    expect(whatToAnswer("Oui, vas-y.", true)).toBeNull();
+    expect(whatToAnswer("D'accord ?", true)).toBeNull();
+    expect(whatToAnswer("Je te laisse développer sur ton dernier projet", false)).toBeNull();
+    expect(whatToAnswer("A. B. C. D. Et voilà ce que je voulais dire aujourd'hui", true)).toBe("C. D. Et voilà ce que je voulais dire aujourd'hui");
+  });
+
   it("waits while they keep talking, and answers the finished question", () => {
     vi.useFakeTimers();
     setAutoTrigger(true);
@@ -417,6 +444,65 @@ describe("QuestionDetector", () => {
     for (const s of ["会议结束了。", "我们开始吧", "没什么问题", "无论如何都要按时完成", "会議は終了しました。", "とても静か", "コーヒーとか"]) {
       expect(looksLikeQuestion(s), s).toBe(false);
     }
+  });
+
+  it("finds French questions, which STT often writes without a question mark", () => {
+    for (const q of [
+      "Parlez-moi de votre dernier projet", "Pouvez-vous me décrire votre rôle",
+      "Qu'est-ce qui vous motive", "Qu’est-ce que vous attendez de ce poste",
+      "Comment gérez-vous les conflits", "Pourquoi voulez-vous nous rejoindre",
+      "Quelle est votre plus grande faiblesse", "Quels sont vos objectifs.",
+      "Avez-vous déjà travaillé avec UiPath", "Et vous, pensez-vous rester longtemps",
+      "Est-ce que vous connaissez Python", "Donnez-moi un exemple concret",
+      "Où vous voyez-vous dans cinq ans", "Combien de personnes avez-vous managé",
+      "Vous avez combien d'années d'expérience ?", "Racontez-moi une situation difficile",
+    ]) {
+      expect(looksLikeQuestion(q), q).toBe(true);
+    }
+    for (const s of [
+      "Quand j'étais chez Capgemini, j'ai mené ce projet.", "Quelle chance d'avoir cette équipe",
+      "On a fixé un rendez-vous demain", "Merci beaucoup pour votre temps.", "Je travaille sur l'automatisation",
+    ]) {
+      expect(looksLikeQuestion(s), s).toBe(false);
+    }
+    for (const tag of ["D'accord ?", "Hein ?", "Voilà ?", "N'est-ce pas ?", "Bon, d'accord ?", "Tu vois ?", "C’est ça ?"]) {
+      expect(looksLikeQuestion(tag), tag).toBe(false);
+    }
+  });
+
+  it("finds spoken French questions after openers and with tu, from real interviews", () => {
+    for (const q of [
+      "Oui, deuxième question, comment tu t'assures que tes systèmes restent face aux pannes d'API",
+      "Ok, et si tu partais quand même sur l'agent antique, quel garde-fou concret tu mettais pour limiter les dérives",
+      "Alors, décris une fois où tu as dû choisir entre un workflow classique et une approche plus agentique",
+      "Oui bien sûr, alors raconte-moi une situation où tu as dû reprendre une architecture existante",
+      "Écoté explique explication au non tech ou conformité, comment tu l'as raconté pour que ça passe bien.",
+      "Quelle décision tu as prise que tu as gardé",
+      "Qu'est-ce que tu as appris et qu'est-ce que tu fais différemment",
+      "Oui je reprends Question suivante, dans ton parcours sur des projets d'automatisation",
+      "J'aimerais savoir pourquoi tu as quitté ton dernier poste",
+      "Et pourquoi ce choix plutôt qu'un autre",
+    ]) {
+      expect(looksLikeQuestion(q), q).toBe(true);
+    }
+    for (const s of [
+      "Très bonne réponse. Neuf sur dix, tu as une vraie approche d'architecte senior.",
+      "Merci, j'évalue rapidement.",
+      "Oui, donc tu disais quand le processus est déterministe, sensible ou réglementé, tu gardes le workflow classique.",
+      "Tu expliques bien le contexte, l'échec et les leçons.",
+      "Oui, je regarde ça. C'est une bonne réponse, je te donne huit sur dix.",
+      "Je travaille sur un projet où l'on automatise la facturation",
+      "Quelle estime pour cette équipe",
+    ]) {
+      expect(looksLikeQuestion(s), s).toBe(false);
+    }
+  });
+
+  it("keeps a short request after the question with it", () => {
+    expect(lastSentence("Comment tu gères les pannes d'API. Un exemple concret s'il te plaît.")).toBe(
+      "Comment tu gères les pannes d'API. Un exemple concret s'il te plaît.",
+    );
+    expect(lastSentence("Je te donne huit sur dix. Merci beaucoup.")).toBe("Merci beaucoup.");
   });
 
   it("ignores a bare tag, which leaves nothing to answer", () => {

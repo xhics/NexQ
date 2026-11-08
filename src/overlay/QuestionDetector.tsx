@@ -7,6 +7,7 @@ import {
   stopAutoAnswer,
 } from "../lib/autoAnswer";
 import { useTranscriptStore } from "../stores/transcriptStore";
+import { isSpeakingAnswer } from "../hooks/useLiveSpeech";
 import { useAIActionsStore } from "../stores/aiActionsStore";
 import { useQuestionStore } from "../stores/questionStore";
 import { showToast } from "../stores/toastStore";
@@ -36,11 +37,16 @@ const TAG_QUESTIONS = new Set([
   "right", "okay", "ok", "yeah", "yep", "yes", "no", "nope", "sure", "correct", "true", "really",
   "agreed", "alright", "all right", "huh", "hmm", "hm", "eh", "see", "you see", "you know",
   "isn't it", "sorry", "pardon", "hello", "cool", "good",
+  "d'accord", "hein", "voilà", "c'est ça", "n'est-ce pas", "oui", "non", "vraiment", "allô", "bon",
+  "tu vois", "vous voyez", "ça va", "c'est bon", "tu sais", "vous savez",
 ]);
-const TAG_LEAD_INS = new Set(["and", "so", "but", "well", "oh", "um", "uh", "okay", "ok", "yeah", "yes", "no"]);
+const TAG_LEAD_INS = new Set([
+  "and", "so", "but", "well", "oh", "um", "uh", "okay", "ok", "yeah", "yes", "no",
+  "et", "donc", "mais", "alors", "bon", "euh", "oui", "non", "ah",
+]);
 
 function isTagQuestion(sentence: string): boolean {
-  const words = sentence.toLowerCase().split(/[\s,.?？!…]+/u).filter(Boolean);
+  const words = sentence.toLowerCase().replace(/’/g, "'").split(/[\s,.?？!…]+/u).filter(Boolean);
   while (words.length > 1 && TAG_LEAD_INS.has(words[0])) words.shift();
   return TAG_QUESTIONS.has(words.join(" "));
 }
@@ -53,6 +59,54 @@ function isCjkQuestion(sentence: string): boolean {
       && !CHINESE_NON_QUESTION_PHRASES.some((phrase) => body.includes(phrase)));
 }
 
+// French question signals, kept in step with
+// src-tauri/src/intelligence/question_detector.rs. French STT rarely writes the
+// question mark, and spoken questions come after openers ("Oui, deuxième
+// question, comment tu…"), so each clause of the sentence is checked.
+
+/** Words that ask at the start of a clause, after openers like "Oui," or "Alors,". */
+const FRENCH_CLAUSE_STARTERS = [
+  "comment", "pourquoi", "combien", "lequel", "laquelle", "lesquels", "lesquelles",
+  "parlez-moi", "parle-moi", "racontez-moi", "raconte-moi", "expliquez-moi", "explique-moi", "expliquez", "explique",
+  "décrivez", "décrivez-moi", "décris", "décris-moi", "dites-moi", "dis-moi", "présentez-vous", "présente-toi",
+  "donnez-moi", "donne-moi", "citez-moi", "cite-moi", "citez", "cite",
+];
+/** Ask only as the sentence's first word: inside a sentence they link ("un projet où…"). */
+const FRENCH_FIRST_WORD_STARTERS = ["où", "d'où", "qui", "quoi"];
+/** "Quel…" asks when it is about you: "quelle décision tu as prise", not "quelle chance". */
+const FRENCH_QUEL = new Set(["quel", "quelle", "quels", "quelles"]);
+const FRENCH_YOU = /(^|[\s'])(tu|t'|toi|ton|ta|tes|vous|votre|vos)(?=[\s'.,;:!?]|$)/u;
+const FRENCH_QUEL_VERBS = /^quel(le)?s? (est|sont|serait|seraient|était|étaient|a été|ont été|sera|seront)(?=\s|$)/u;
+const FRENCH_PATTERNS = [
+  "est-ce que", "est-ce qu'", "qu'est-ce", "un exemple concret", "un exemple précis",
+  "nouvelle question", "question suivante", "prochaine question", "première question", "deuxième question",
+  "troisième question", "quatrième question", "cinquième question", "dernière question", "autre question",
+  "j'aimerais savoir", "je voudrais savoir", "j'aimerais comprendre", "je voudrais comprendre",
+  "je vous écoute", "je t'écoute",
+];
+const FRENCH_LEAD_INS = new Set(["et", "mais", "donc", "alors", "puis", "ok", "okay", "bon", "oui", "ouais", "bien"]);
+// Inversion ("avez-vous", "pensez-vous", "a-t-il") asks; "rendez-vous" doesn't.
+const FRENCH_INVERSION = /(^|\s)(?!rendez-vous)\p{L}+-(vous|tu|t-il|t-elle|t-on)(\s|$)/u;
+
+function frenchClauseAsks(clause: string, first: boolean): boolean {
+  const words = clause.split(/\s+/u).filter(Boolean);
+  while (words.length > 1 && FRENCH_LEAD_INS.has(words[0])) words.shift();
+  const head = words[0] ?? "";
+  if (FRENCH_CLAUSE_STARTERS.includes(head)) return true;
+  if (first && FRENCH_FIRST_WORD_STARTERS.includes(head)) return true;
+  if (FRENCH_QUEL.has(head)) {
+    const rest = words.join(" ");
+    return FRENCH_QUEL_VERBS.test(rest) || FRENCH_YOU.test(rest);
+  }
+  return false;
+}
+
+export function isFrenchQuestion(lower: string): boolean {
+  const text = lower.replace(/’/g, "'").replace(/[.!…]+$/u, "");
+  if (FRENCH_PATTERNS.some((p) => text.includes(p)) || FRENCH_INVERSION.test(text)) return true;
+  return text.split(/[,;:]+/u).some((clause, i) => frenchClauseAsks(clause.trim(), i === 0));
+}
+
 export function looksLikeQuestion(text: string): boolean {
   const trimmed = text.trim();
   if (isTagQuestion(trimmed)) return false;
@@ -63,7 +117,7 @@ export function looksLikeQuestion(text: string): boolean {
     "can you", "could you", "would you", "do you", "are you",
     "is there", "have you", "tell me", "explain",
   ];
-  return qWords.some((w) => lower.startsWith(w));
+  return qWords.some((w) => lower.startsWith(w)) || isFrenchQuestion(lower);
 }
 
 /**
@@ -75,8 +129,44 @@ export function lastSentence(text: string): string {
   const sentences = text.trim().match(/[^.?!。？！\n]+[.?!。？！]*/gu) ?? [];
   let last = sentences.length - 1;
   while (last > 0 && isTagQuestion(sentences[last])) last--;
-  return (sentences[last] ?? "").trim();
+  const newest = (sentences[last] ?? "").trim();
+  // A short request after the question ("…des données incohérentes. Un exemple
+  // concret s'il te plaît.") belongs to it.
+  if (last > 0 && newest.split(/\s+/u).length <= 8) {
+    const before = sentences[last - 1].trim();
+    if (looksLikeQuestion(before)) return `${before} ${newest}`;
+  }
+  return newest;
 }
+
+/** Fewest words a turn needs to be answered when it holds no question ("Oui, vas-y" isn't). */
+export const TURN_MIN_WORDS = 4;
+
+/**
+ * What to answer in a line from the other party: its question, or with
+ * `everyTurn` (answer whenever they stop talking) what they just said, up to
+ * its last three sentences. Null when there is nothing to answer.
+ */
+export function whatToAnswer(text: string, everyTurn: boolean): string | null {
+  const sentence = lastSentence(text);
+  if (sentence && looksLikeQuestion(sentence)) return sentence;
+  if (!everyTurn) return null;
+  const sentences = (text.trim().match(/[^.?!。？！\n]+[.?!。？！]*/gu) ?? []).map((s) => s.trim()).filter(Boolean);
+  const tail: string[] = [];
+  for (let i = sentences.length - 1; i >= 0 && tail.length < 3; i--) {
+    tail.unshift(sentences[i]);
+    if (tail.join(" ").length >= 400) break;
+  }
+  const said = tail.join(" ");
+  if (isTagQuestion(said) || said.split(/\s+/u).filter(Boolean).length < TURN_MIN_WORDS) return null;
+  return said;
+}
+
+/** Whether Auto-Answer answers every turn of the other party, not just questions. */
+const answersEveryTurn = () => {
+  const d = useAIActionsStore.getState().configs.globalDefaults;
+  return d.autoTrigger && d.autoAnswerTrigger === "turn";
+};
 
 /**
  * Starts an automatic answer to `question` (a line's question), unless another
@@ -91,7 +181,8 @@ function startAutoAnswer(question: DetectedQuestion, segmentId: string | undefin
   }
   if (segmentId !== undefined) store.answerLine(question, segmentId);
   const requestId = crypto.randomUUID();
-  const done = runUserAction("Assist", question.text, { requestId }).catch((err) => {
+  const mode = useAIActionsStore.getState().configs.globalDefaults.autoAnswerMode ?? "Assist";
+  const done = runUserAction(mode, question.text, { requestId }).catch((err) => {
     // Refused: an answer started elsewhere in the meantime.
     if (!String(err).includes(REFUSED)) return;
     const now = useQuestionStore.getState();
@@ -107,8 +198,9 @@ function startAutoAnswer(question: DetectedQuestion, segmentId: string | undefin
 async function onTurnSignal(seg: TranscriptSegment, signalAt: number) {
   if (!seg.turn || !useAIActionsStore.getState().configs.globalDefaults.autoTrigger) return;
   const store = useQuestionStore.getState();
-  const sentence = lastSentence(seg.text);
-  const question = sentence && looksLikeQuestion(sentence) ? sentence : null;
+  // Paused, or NexQ's own voice may be what was heard.
+  if (store.paused || isSpeakingAnswer()) return;
+  const question = whatToAnswer(seg.text, answersEveryTurn());
   const current = store.autoAnswer;
   const step = decideTurnStep(seg.turn, seg.id, question, current);
   if (step.kind === "none") return;
@@ -146,7 +238,10 @@ export function QuestionDetector() {
   const addQuestion = useQuestionStore((s) => s.addQuestion);
   const justMountedRef = useRef(true);
   const segments = useTranscriptStore((s) => s.segments);
-  const autoTrigger = useAIActionsStore((s) => s.configs.globalDefaults.autoTrigger);
+  const autoTriggerOn = useAIActionsStore((s) => s.configs.globalDefaults.autoTrigger);
+  const everyTurn = useAIActionsStore((s) => s.configs.globalDefaults.autoTrigger && s.configs.globalDefaults.autoAnswerTrigger === "turn");
+  const paused = useQuestionStore((s) => s.paused);
+  const autoTrigger = autoTriggerOn && !paused;
   // Changes whenever the other party says more (a new line, or a line growing).
   const otherPartyActivity = useTranscriptStore((s) => {
     for (let i = s.segments.length - 1; i >= 0; i--) {
@@ -189,8 +284,9 @@ export function QuestionDetector() {
     for (const seg of segments) {
       if (!seg.is_final || !checkLine(seg.id, seg.text)) continue;
       if (!isOtherParty(seg.speaker)) continue;
-      const sentence = lastSentence(seg.text);
-      if (sentence && looksLikeQuestion(sentence)) {
+      const sentence = whatToAnswer(seg.text, everyTurn);
+      // While NexQ reads an answer aloud, the other party's channel hears it too.
+      if (sentence && !isSpeakingAnswer()) {
         addQuestion({ text: sentence, confidence: 0.8, timestamp_ms: seg.timestamp_ms, source: seg.speaker }, seg.id);
         // The line grew into another question after Auto-Answer answered it:
         // that answer was for an incomplete question and gives way. (Lines
@@ -209,7 +305,7 @@ export function QuestionDetector() {
     if (justMountedRef.current && panelSeen) holdBackUnanswered();
     justMountedRef.current = false;
     setPanelSeen();
-  }, [segments, addQuestion, autoTrigger]);
+  }, [segments, addQuestion, autoTrigger, everyTurn]);
 
   const handleAssist = useCallback((index: number) => {
     const question = questions[index];

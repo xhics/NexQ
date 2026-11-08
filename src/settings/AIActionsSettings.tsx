@@ -573,6 +573,52 @@ export function AIActionsSettings() {
                       label="Toggle auto-answer"
                     />
                   </div>
+                  {configs.globalDefaults.autoTrigger && (
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground/70">Answer when</span>
+                      <div className="flex overflow-hidden rounded-md border border-border/30" role="radiogroup" aria-label="When Auto-Answer answers">
+                        {([["questions", "They ask a question"], ["turn", "They stop talking"]] as const).map(([trigger, label]) => (
+                          <button
+                            key={trigger}
+                            type="button"
+                            role="radio"
+                            aria-checked={(configs.globalDefaults.autoAnswerTrigger ?? "questions") === trigger}
+                            onClick={() => updateGlobalDefaults({ autoAnswerTrigger: trigger })}
+                            className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              (configs.globalDefaults.autoAnswerTrigger ?? "questions") === trigger
+                                ? "bg-primary/15 text-primary"
+                                : "text-muted-foreground/60 hover:text-foreground"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {configs.globalDefaults.autoTrigger && (
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground/70">Answer with</span>
+                      <div className="flex overflow-hidden rounded-md border border-border/30" role="radiogroup" aria-label="Auto-Answer action">
+                        {([["Assist", "Assist"], ["WhatToSay", "Say (words to speak)"]] as const).map(([mode, label]) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={(configs.globalDefaults.autoAnswerMode ?? "Assist") === mode}
+                            onClick={() => updateGlobalDefaults({ autoAnswerMode: mode })}
+                            className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              (configs.globalDefaults.autoAnswerMode ?? "Assist") === mode
+                                ? "bg-primary/15 text-primary"
+                                : "text-muted-foreground/60 hover:text-foreground"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </fieldset>
                 {openHelp === "autoTrigger" && <HelpPanel id="autoTrigger" />}
               </div>

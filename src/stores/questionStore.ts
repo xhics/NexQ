@@ -46,6 +46,9 @@ interface QuestionState {
 
   /** The newest automatic answer NexQ started (it may have finished since). */
   autoAnswer: AutoAnswerRef | null;
+  /** Auto-Answer paused for now: questions still show as cards to click. */
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
   setAutoAnswer: (ref: AutoAnswerRef | null) => void;
   /** Shows `question` as the line's question, answered (a new card if the line has none). */
   answerLine: (question: DetectedQuestion, segmentId: string) => void;
@@ -63,6 +66,14 @@ export const useQuestionStore = create<QuestionState>((set) => ({
   questions: [],
   panelSeen: false,
   autoAnswer: null,
+  paused: false,
+  // Back from a pause, what was asked meanwhile stays a card to click
+  // rather than getting answered late.
+  setPaused: (paused) =>
+    set((state) => ({
+      paused,
+      questions: paused ? state.questions : state.questions.map((q) => (q.assisted ? q : { ...q, heldBack: true })),
+    })),
 
   addQuestion: (q, segmentId) =>
     set((state) => {
@@ -103,7 +114,7 @@ export const useQuestionStore = create<QuestionState>((set) => ({
   clear: () => {
     checkedText.clear();
     turnLines.clear();
-    set({ questions: [], panelSeen: false, autoAnswer: null });
+    set({ questions: [], panelSeen: false, autoAnswer: null, paused: false });
   },
 
   setAutoAnswer: (ref) => set({ autoAnswer: ref }),
