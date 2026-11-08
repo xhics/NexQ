@@ -60,6 +60,8 @@ cpal = "0.15"
 
 # Windows-specific
 [target.'cfg(windows)'.dependencies]
+# #[implement] for the process-loopback completion handler
+windows-core = "0.62"
 windows = { version = "0.62", features = [
     "Win32_Security_Credentials",
     "Win32_Foundation",

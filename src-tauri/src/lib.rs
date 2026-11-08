@@ -510,6 +510,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // == COMMANDS: audio ==
             audio_commands::list_audio_devices,
+            audio_commands::system_capture_excludes_self,
             audio_commands::start_capture,
             audio_commands::stop_capture,
             audio_commands::get_audio_level,

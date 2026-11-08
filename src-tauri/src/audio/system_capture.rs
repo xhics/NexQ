@@ -49,6 +49,16 @@ pub fn start_system_capture_device(
     let handle = std::thread::Builder::new()
         .name("system-audio-capture".into())
         .spawn(move || {
+            // Everything but NexQ's own sound (its voice reading answers),
+            // when capturing the default output; else, or if Windows can't,
+            // the output device's own loopback.
+            #[cfg(windows)]
+            if follows_default_output(device_name.as_deref()) {
+                match super::process_loopback::run(tx.clone(), stop_flag.clone(), &ready_tx, send_system_chunk) {
+                    Ok(()) => return,
+                    Err(e) => log::warn!("Process loopback unavailable ({}); using device loopback", e),
+                }
+            }
             if let Err(e) = run_cpal_loopback(tx, stop_flag, device_name, &ready_tx) {
                 log::error!("System audio capture failed: {}", e);
                 let _ = ready_tx.send(Err(e));
@@ -68,6 +78,17 @@ pub fn start_system_capture_device(
             Err("System capture thread ended before starting".to_string())
         }
     }
+}
+
+/// Whether `device_name` is the default output (or none was chosen): process
+/// loopback records what plays there, so a specific other device keeps its own loopback.
+#[cfg(windows)]
+fn follows_default_output(device_name: Option<&str>) -> bool {
+    let Some(name) = device_name else { return true };
+    cpal::default_host()
+        .default_output_device()
+        .and_then(|d| d.name().ok())
+        .is_some_and(|default| default == name)
 }
 
 /// How long starting a meeting waits for the loopback stream to open.

@@ -95,6 +95,16 @@ fn with_turn(mut seg: serde_json::Value, turn: Option<crate::stt::provider::Turn
     seg
 }
 
+/// Whether the running system capture leaves out NexQ's own sound, so an
+/// answer read aloud isn't heard back as the other party.
+#[command]
+pub fn system_capture_excludes_self() -> bool {
+    #[cfg(windows)]
+    return crate::audio::process_loopback::excludes_self();
+    #[cfg(not(windows))]
+    false
+}
+
 /// List all available audio input and output devices.
 #[command]
 pub async fn list_audio_devices() -> Result<String, String> {

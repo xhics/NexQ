@@ -10,9 +10,22 @@ import { logToFile } from "../lib/logger";
 const ECHO_TAIL_MS = 1500;
 let speakingUntil = 0;
 let speaking = false;
+/** The system capture leaves NexQ's sound out (Windows process loopback): no echo to guard against. */
+let captureExcludesSelf = false;
 
-/** Whether NexQ's own voice is (or was just) playing: lines heard now may be it. */
+function refreshCaptureExcludesSelf(): void {
+  import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke<boolean>("system_capture_excludes_self"))
+    .then((v) => { captureExcludesSelf = v; })
+    .catch(() => { captureExcludesSelf = false; });
+}
+
+/**
+ * Whether NexQ's own voice is (or was just) playing and may be heard back as
+ * the other party: never when the capture leaves NexQ's sound out.
+ */
 export function isSpeakingAnswer(): boolean {
+  if (captureExcludesSelf) return false;
   return speaking || Date.now() < speakingUntil;
 }
 
@@ -81,6 +94,7 @@ export function useLiveSpeech(): void {
     const say = (chunk: string) => {
       const words = speakableText(chunk);
       if (!/[\p{L}\p{N}]/u.test(words)) return;
+      refreshCaptureExcludesSelf();
       const { sttLanguage, speechRate } = useConfigStore.getState();
       const lang = sttLanguage && sttLanguage !== "auto" ? sttLanguage : navigator.language || "fr-FR";
       const utterance = new SpeechSynthesisUtterance(words);

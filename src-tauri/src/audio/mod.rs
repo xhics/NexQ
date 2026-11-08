@@ -2,6 +2,8 @@ pub mod device_default;
 pub mod device_manager;
 pub mod encoder;
 pub mod mic_capture;
+#[cfg(windows)]
+pub mod process_loopback;
 pub mod recorder;
 pub mod resampler;
 pub mod session_monitor;
