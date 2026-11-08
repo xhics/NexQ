@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Maximize2, Eye, Pause, Play, Headphones } from "lucide-react";
@@ -17,44 +17,90 @@ const OPACITY_PRESETS = [0.02, 0.08, 0.2, 0.4];
 const SPEEDS = [6, 10, 14, 20, 30, 45];
 const RATES = [1, 1.15, 1.3, 1.5, 1.75];
 
-/** Where the box was last left, so leaving and re-entering keeps its place. */
-let lastCompact: { x: number; y: number; width: number; height: number } | null = null;
-let lastFull: { width: number; height: number } | null = null;
+type Bounds = { x: number; y: number; width: number; height: number };
+const BOUNDS_KEY = "nexq.compactBounds";
 
-/** Shrinks the overlay window to the compact box: top centre the first time. */
-export async function enterCompactWindow(): Promise<void> {
-  const { getCurrentWindow, currentMonitor, LogicalSize, LogicalPosition } = await import("@tauri-apps/api/window");
-  const win = getCurrentWindow();
-  const scale = await win.scaleFactor();
-  const size = (await win.innerSize()).toLogical(scale);
-  lastFull = { width: size.width, height: size.height };
-  await win.setMinSize(new LogicalSize(COMPACT_MIN.width, COMPACT_MIN.height));
-  const target = lastCompact ?? { x: NaN, y: NaN, ...COMPACT_SIZE };
-  await win.setSize(new LogicalSize(target.width, target.height));
-  if (lastCompact) {
-    await win.setPosition(new LogicalPosition(lastCompact.x, lastCompact.y));
-  } else {
-    const monitor = await currentMonitor();
-    if (monitor) {
-      const area = monitor.workArea ?? { position: monitor.position, size: monitor.size };
-      const pos = area.position.toLogical(monitor.scaleFactor);
-      const mon = area.size.toLogical(monitor.scaleFactor);
-      await win.setPosition(new LogicalPosition(pos.x + (mon.width - target.width) / 2, pos.y + 8));
-    }
+/** Where the box was last left, kept across restarts in this window's storage. */
+function loadBounds(): Bounds | null {
+  try {
+    const b = JSON.parse(localStorage.getItem(BOUNDS_KEY) ?? "null") as Bounds | null;
+    return b && [b.x, b.y, b.width, b.height].every(Number.isFinite) ? b : null;
+  } catch {
+    return null;
   }
 }
+function saveBounds(b: Bounds): void {
+  try { localStorage.setItem(BOUNDS_KEY, JSON.stringify(b)); } catch { /* storage unavailable */ }
+}
 
-/** Gives the overlay window its normal size back, remembering the box's place. */
-export async function leaveCompactWindow(): Promise<void> {
-  const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
+/** The full overlay's place before the box, given back on the way out. */
+let lastFull: Bounds | null = null;
+
+async function currentBounds(): Promise<Bounds> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
   const win = getCurrentWindow();
   const scale = await win.scaleFactor();
   const pos = (await win.outerPosition()).toLogical(scale);
   const size = (await win.innerSize()).toLogical(scale);
-  lastCompact = { x: pos.x, y: pos.y, width: size.width, height: size.height };
+  return { x: pos.x, y: pos.y, width: size.width, height: size.height };
+}
+
+/** Whether the box's saved top-left corner is still on a screen (one may have been unplugged). */
+async function onScreen(b: Bounds): Promise<boolean> {
+  const { availableMonitors } = await import("@tauri-apps/api/window");
+  const monitors = await availableMonitors().catch(() => []);
+  return monitors.some((m) => {
+    const pos = m.position.toLogical(m.scaleFactor);
+    const size = m.size.toLogical(m.scaleFactor);
+    return b.x >= pos.x - 20 && b.y >= pos.y - 20 && b.x < pos.x + size.width - 40 && b.y < pos.y + size.height - 40;
+  });
+}
+
+/** Remembers where the box is while it moves or resizes. */
+export async function watchCompactBounds(): Promise<() => void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const win = getCurrentWindow();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { currentBounds().then(saveBounds).catch(() => {}); }, 400);
+  };
+  const unlisten = await Promise.all([win.onMoved(save), win.onResized(save)]);
+  return () => { clearTimeout(timer); unlisten.forEach((u) => u()); };
+}
+
+/** Shrinks the overlay window to the compact box: where you left it, else top centre. */
+export async function enterCompactWindow(): Promise<void> {
+  const { getCurrentWindow, currentMonitor, LogicalSize, LogicalPosition } = await import("@tauri-apps/api/window");
+  const win = getCurrentWindow();
+  lastFull = await currentBounds();
+  await win.setMinSize(new LogicalSize(COMPACT_MIN.width, COMPACT_MIN.height));
+  const saved = loadBounds();
+  const target = saved && (await onScreen(saved)) ? saved : null;
+  const width = target?.width ?? COMPACT_SIZE.width;
+  await win.setSize(new LogicalSize(width, target?.height ?? COMPACT_SIZE.height));
+  if (target) {
+    await win.setPosition(new LogicalPosition(target.x, target.y));
+    return;
+  }
+  const monitor = await currentMonitor();
+  if (monitor) {
+    const area = monitor.workArea ?? { position: monitor.position, size: monitor.size };
+    const pos = area.position.toLogical(monitor.scaleFactor);
+    const mon = area.size.toLogical(monitor.scaleFactor);
+    await win.setPosition(new LogicalPosition(pos.x + (mon.width - width) / 2, pos.y + 8));
+  }
+}
+
+/** Gives the overlay window its normal size and place back, remembering the box's. */
+export async function leaveCompactWindow(): Promise<void> {
+  const { getCurrentWindow, LogicalSize, LogicalPosition } = await import("@tauri-apps/api/window");
+  const win = getCurrentWindow();
+  saveBounds(await currentBounds());
   await win.setMinSize(new LogicalSize(OVERLAY_MIN.width, OVERLAY_MIN.height));
-  const full = lastFull ?? { width: 500, height: 700 };
+  const full = lastFull ?? { x: 50, y: 50, width: 500, height: 700 };
   await win.setSize(new LogicalSize(Math.max(full.width, OVERLAY_MIN.width), Math.max(full.height, OVERLAY_MIN.height)));
+  if (lastFull) await win.setPosition(new LogicalPosition(full.x, full.y));
 }
 
 /**
@@ -81,6 +127,14 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   const speechRate = useConfigStore((s) => s.speechRate ?? 1.15);
   const setSpeechRate = useConfigStore((s) => s.setSpeechRate);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Keep the box's place across restarts, even if NexQ closes while it's open.
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let gone = false;
+    watchCompactBounds().then((u) => { if (gone) u(); else stop = u; }).catch(() => {});
+    return () => { gone = true; stop?.(); };
+  }, []);
 
   // Starts at the top and moves at reading pace, not to the newest words.
   const reading = useReadingScroll(scrollRef, content, null, speed);
