@@ -884,3 +884,8 @@ export async function generateInterviewDebrief(transcript: string, language: str
 export async function scorePracticeAnswer(question: string, answer: string, reference: string | null, language: string): Promise<string> {
   return invoke("score_practice_answer", { question, answer, reference, language });
 }
+
+/** Loads the embedding model ahead of the first question; resolves with how long it took (ms). */
+export async function warmUpEmbedder(): Promise<number> {
+  return invoke("warm_up_embedder");
+}

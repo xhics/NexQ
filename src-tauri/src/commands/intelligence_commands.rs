@@ -208,32 +208,31 @@ async fn retrieve_rag(
 
     let mut all_chunks: Vec<rag::search::ScoredChunk> = Vec::new();
 
-    // Search 1: question only (clean semantic match)
+    let mut keep = |kind: &str, result: Result<Vec<rag::search::ScoredChunk>, String>| match result {
+        Ok(chunks) => all_chunks.extend(chunks),
+        Err(e) => { log::warn!("RAG search ({kind}) failed: {}", e); note_search_error(&e); }
+    };
+
     if let Some(ref q) = question_text {
         out.query = Some(q.clone());
-        match rag::RagManager::search_async(db_arc, q, &config, &embedder_url, &embedding_model).await {
-            Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => { log::warn!("RAG search (question-only) failed: {}", e); note_search_error(&e); }
+        if has_transcript {
+            // Search 1, question only (clean semantic match), and search 2,
+            // question + transcript (contextual match), side by side: one
+            // embedder round trip of waiting instead of two.
+            let combined = format!("{}\n\n{}", q, transcript_excerpt);
+            let (alone, with_context) = tokio::join!(
+                rag::RagManager::search_async(db_arc, q, &config, &embedder_url, &embedding_model),
+                rag::RagManager::search_async(db_arc, &combined, &config, &embedder_url, &embedding_model),
+            );
+            keep("question-only", alone);
+            keep("combined", with_context);
+        } else {
+            keep("question-only", rag::RagManager::search_async(db_arc, q, &config, &embedder_url, &embedding_model).await);
         }
-    }
-
-    // Search 2: question + transcript (contextual match)
-    if has_question && has_transcript && !embedder_resting() {
-        let combined = format!("{}\n\n{}", question_text.as_ref().unwrap(), transcript_excerpt);
-        if out.query.is_none() {
-            out.query = Some(combined.clone());
-        }
-        match rag::RagManager::search_async(db_arc, &combined, &config, &embedder_url, &embedding_model).await {
-            Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => { log::warn!("RAG search (combined) failed: {}", e); note_search_error(&e); }
-        }
-    } else if !has_question && has_transcript {
+    } else if has_transcript {
         // No question at all — search with transcript only as last resort
         out.query = Some(transcript_excerpt.clone());
-        match rag::RagManager::search_async(db_arc, &transcript_excerpt, &config, &embedder_url, &embedding_model).await {
-            Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => { log::warn!("RAG search (transcript-only) failed: {}", e); note_search_error(&e); }
-        }
+        keep("transcript-only", rag::RagManager::search_async(db_arc, &transcript_excerpt, &config, &embedder_url, &embedding_model).await);
     }
 
     // Deduplicate: keep highest normalized_score per chunk_id

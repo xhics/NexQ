@@ -243,6 +243,8 @@ function App() {
         showOverlayWindow().catch(() => {});
         // Then tell the launcher this window owns the meeting's speaker/bookmark data.
         emitOverlayMeetingReady(meeting.id).catch(() => {});
+        // Load the embedding model now, not on the first question (1-3 s).
+        import("./lib/ipc").then(({ warmUpEmbedder }) => warmUpEmbedder()).catch(() => {});
       }
     ).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };

@@ -28,7 +28,13 @@ struct EmbedResponse {
 struct EmbedRequest {
     model: String,
     input: Vec<String>,
+    /// How long Ollama keeps the model loaded after this call. Its default
+    /// (5 minutes) unloads it between questions, and reloading costs 1-3 s.
+    keep_alive: &'static str,
 }
+
+/// Long enough to stay loaded through a meeting's quiet stretches.
+pub const KEEP_ALIVE: &str = "30m";
 
 /// A single model entry in the Ollama /api/tags response.
 #[derive(Debug, Deserialize)]
@@ -154,6 +160,7 @@ impl OllamaEmbedder {
             let request_body = EmbedRequest {
                 model: model.to_string(),
                 input: safe_texts,
+                keep_alive: KEEP_ALIVE,
             };
 
             let response = self

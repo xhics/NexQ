@@ -238,6 +238,22 @@ pub async fn test_ollama_embedding_connection(
         .map_err(|e| format!("Failed to serialize connection status: {}", e))
 }
 
+/// Loads the embedding model in Ollama ahead of the first question (a meeting
+/// starting), so that question doesn't wait 1-3 s for it. Returns how long it took.
+#[command]
+pub async fn warm_up_embedder(state: State<'_, AppState>) -> Result<u64, String> {
+    let (base_url, model) = {
+        let rag_arc = state.rag.as_ref().ok_or_else(|| "RAG manager not initialized".to_string())?;
+        let mgr = rag_arc.lock().map_err(|e| e.to_string())?;
+        (mgr.embedder_url(), mgr.embedding_model())
+    };
+    let started = std::time::Instant::now();
+    OllamaEmbedder::new(&base_url).embed_query("warm up", &model).await?;
+    let ms = started.elapsed().as_millis() as u64;
+    log::info!("RAG: embedding model ready in {} ms", ms);
+    Ok(ms)
+}
+
 #[command]
 pub async fn pull_embedding_model(
     model: String,
