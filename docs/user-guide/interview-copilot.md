@@ -48,6 +48,12 @@ Use Context Intelligence (RAG) to give the AI background about you and the role:
 
 See [Using Context Intelligence (RAG)](rag-context.md) for more details on document loading.
 
+### Prepared answers
+
+In **Settings > Prepared Answers**, click **Write stories from my CV** (paste the job offer first to aim them at it). NexQ writes about ten STAR stories (situation, task, action, result) from your documents, each with the questions it answers and keywords to glance at. Review and correct them before the interview: they say only what you validated.
+
+During the meeting, when a question matches a story, the story shows at once above the AI's answer, before the AI has written anything. Close it with its × if it doesn't fit.
+
 ## Positioning the Overlay
 
 When the meeting starts, the overlay window (500x700, always-on-top, transparent) appears. Position it carefully:
@@ -70,11 +76,21 @@ When the meeting starts, the overlay window (500x700, always-on-top, transparent
    - `4` -- Recap (summarizes the conversation so far)
    - `5` -- Ask Question (free-form query)
 
-Question detection recognizes `?` and `？`, common Chinese question words (such as 什么 / 什麼, 怎么 / 怎麼 and 哪), Chinese sentence endings 吗 / 嗎 and 呢, and Japanese question endings such as ですか, ますか and でしょうか. Suggestions ending in 吧 ("let's…"), phrases such as 没什么 or 无论如何, and a bare tag such as "Right?" or "You know?" are not treated as questions. These are heuristic signals: an ambiguous phrase can still be marked as a question.
+Question detection recognizes `?` and `？`, French questions without a question mark (question words in any clause, after openers such as "Oui, deuxième question, comment tu…", "quel…" about you, "avez-vous", "question suivante"), common Chinese question words (such as 什么 / 什麼, 怎么 / 怎麼 and 哪), Chinese sentence endings 吗 / 嗎 and 呢, and Japanese question endings such as ですか, ますか and でしょうか. Suggestions ending in 吧 ("let's…"), phrases such as 没什么 or 无论如何, and a bare tag such as "Right?" or "You know?" are not treated as questions. These are heuristic signals: an ambiguous phrase can still be marked as a question.
 
 Detected questions appear as cards in the overlay. Click the card you need to get an answer. To have the newest question answered automatically, turn on **Auto-Answer** in Settings > AI Actions.
 
 For the fastest automatic answers, transcribe the interviewer with Cartesia or Deepgram Flux. Both tell NexQ when the interviewer has finished, so the answer starts right away instead of after 1.5 seconds of quiet. If the interviewer keeps going after a pause, NexQ drops the answer it started and answers the complete question. Press `Space`, or click a question or an action, at any time to get your own answer instead.
+
+Auto-Answer can also answer **whenever the interviewer stops talking**, not only questions (Settings > AI Actions > Auto-Answer > Answer when). Feedback such as "Très bonne réponse, huit sur dix" or "je regarde et je te fais un retour" is left alone. **Answer with: Say** writes the words to speak, in the first person.
+
+### Reading while you speak
+
+- **Compact box** (`Ctrl+Alt+K`, or the header button): the answer alone in a nearly invisible, framed box at the top of the screen. Drag it anywhere and resize it from its edges; it keeps its place. Double-click it to go back.
+- **Reading pace**: answers start at the top and scroll gently at reading speed (− / + in the compact box) instead of jumping to the newest words. Hovering holds them still.
+- **Cue card** (Settings > AI Actions > Cue card > Keywords first): each answer opens with 3 to 5 keywords shown large, then one short sentence you can say at once.
+- **Read aloud** (`Ctrl+Alt+L`, or the headphones button): NexQ reads each sentence in your headset as soon as it is written. On the default output, Windows 10 2004 and later leave NexQ's own voice out of the interviewer's audio, so it is never transcribed as theirs.
+- **Pause** (`Ctrl+Alt+P`): stops Auto-Answer and any reading; questions still show as cards to click.
 
 **Important**: Do not stare at the overlay. Glance at it naturally, the way you would glance at notes. Maintain eye contact with your camera.
 
