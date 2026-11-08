@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { PreflightCheck } from "./PreflightCheck";
 import { useConfigStore } from "../stores/configStore";
 import { setRecordingEnabled } from "../lib/ipc";
 import { useMeetingScenarios, useScenarioStore } from "../stores/scenarioStore";
@@ -176,6 +177,9 @@ export function MeetingSetupModal({ open, onStart, onCancel }: MeetingSetupModal
                 )}
               </div>
             </div>
+
+            {/* Devices, transcription, AI and documents, checked before an interview */}
+            <PreflightCheck />
 
             {/* Big start button */}
             <button
