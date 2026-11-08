@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AnswerMarkdown } from "./CueLine";
 import { PreparedStory, usePreparedStory } from "./PreparedStory";
+import { answerTimeColor, formatAnswerTime, useAnswerTimer } from "../hooks/useAnswerTimer";
 import { Maximize2, Eye, Pause, Play, Headphones } from "lucide-react";
 import { stopSpeaking } from "../hooks/useLiveSpeech";
 import { useQuestionStore } from "../stores/questionStore";
@@ -139,6 +140,7 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   // Starts at the top and moves at reading pace, not to the newest words.
   // A prepared story for the question shows first, at once.
   const prepared = usePreparedStory();
+  const answerMs = useAnswerTimer();
   const reading = useReadingScroll(scrollRef, content, prepared.story?.id ?? null, speed);
 
   const startDrag = (e: React.MouseEvent) => {
@@ -199,6 +201,17 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
           <Maximize2 className="h-3 w-3" />
         </button>
       </div>
+
+      {answerMs !== null && (
+        <span
+          className={`absolute bottom-1 right-2 z-10 text-[10px] font-semibold tabular-nums ${answerTimeColor(answerMs)}`}
+          style={{ textShadow: "0 1px 2px #000" }}
+          title="How long you have been answering"
+          aria-label={`Answering for ${formatAnswerTime(answerMs)}`}
+        >
+          ⏱ {formatAnswerTime(answerMs)}
+        </span>
+      )}
 
       {paused && (
         <span className="absolute left-2 top-1 z-10 text-[9px] font-semibold uppercase tracking-wider text-amber-300/80" style={{ textShadow: "0 1px 2px #000" }}>

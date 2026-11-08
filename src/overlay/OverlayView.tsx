@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { useQuestionStore } from "../stores/questionStore";
 import { useLiveSpeech, stopSpeaking } from "../hooks/useLiveSpeech";
+import { answerTimeColor, formatAnswerTime, useAnswerTimer } from "../hooks/useAnswerTimer";
 import { toggleStealthMode } from "../hooks/useGlobalShortcut";
 import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, formatShortcut } from "../lib/shortcutLabel";
 import { formatDuration } from "../lib/utils";
@@ -77,6 +78,7 @@ export function OverlayView() {
   const setAutoPaused = useQuestionStore((s) => s.setPaused);
   const speakAnswers = useConfigStore((s) => s.speakAnswers ?? false);
   const setSpeakAnswers = useConfigStore((s) => s.setSpeakAnswers);
+  const answerMs = useAnswerTimer();
   // Reads answers aloud as they are written, when turned on.
   useLiveSpeech();
   const enterCompact = useCallback(() => {
@@ -238,6 +240,11 @@ export function OverlayView() {
           <span className="text-xs text-muted-foreground/60 tabular-nums font-medium">
             {elapsedMs > 0 ? formatDuration(elapsedMs) : "00:00"}
           </span>
+          {answerMs !== null && (
+            <span className={`text-[10px] font-semibold tabular-nums ${answerTimeColor(answerMs)}`} title="How long you have been answering">
+              ⏱ {formatAnswerTime(answerMs)}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
