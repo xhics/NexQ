@@ -237,6 +237,10 @@ function App() {
           settingsOpen: false,
         });
         useMeetingStore.getState().startTimer();
+        // The launcher's request to show the overlay can arrive before this
+        // window knows the meeting (it then shows the launcher back), so the
+        // overlay comes up itself now that it has the meeting.
+        showOverlayWindow().catch(() => {});
         // Then tell the launcher this window owns the meeting's speaker/bookmark data.
         emitOverlayMeetingReady(meeting.id).catch(() => {});
       }
