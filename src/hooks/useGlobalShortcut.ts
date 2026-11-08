@@ -12,7 +12,9 @@ import { isOverlayVisible, meetingShortcutAction, showLauncherWindow, showMeetin
 import { endMeetingFromThisWindow } from "./useUpdater";
 import { showToast } from "../stores/toastStore";
 import { useConfigStore } from "../stores/configStore";
-import { normalizeAccelerator, reservedShortcutAction } from "../lib/shortcutLabel";
+import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, normalizeAccelerator, reservedShortcutAction } from "../lib/shortcutLabel";
+import { useQuestionStore } from "../stores/questionStore";
+import { stopSpeaking } from "./useLiveSpeech";
 
 /** Ctrl+M: end the running meeting (in every window that holds it) or start one. */
 async function toggleMeetingFromShortcut(): Promise<void> {
@@ -82,6 +84,46 @@ export function useGlobalShortcut() {
       if (registered) unregister(key).catch(() => {});
     };
   }, [assistShortcut, stealthShortcut, meetingActive]);
+
+  // Pause, read aloud and the compact box from any app, during a meeting, by
+  // the overlay window (which holds that state); free the rest of the time.
+  useEffect(() => {
+    if (!meetingActive || getCurrentWebviewWindow().label !== "overlay") return;
+    const defs: Array<[string, () => void]> = [
+      [MEETING_SHORTCUTS.pause, () => {
+        const q = useQuestionStore.getState();
+        if (!q.paused) stopSpeaking();
+        q.setPaused(!q.paused);
+        showToast(q.paused ? "Auto-Answer resumed" : "Auto-Answer paused", "info");
+      }],
+      [MEETING_SHORTCUTS.speak, () => {
+        const c = useConfigStore.getState();
+        const on = !(c.speakAnswers ?? false);
+        c.setSpeakAnswers(on);
+        showToast(on ? "Reading answers aloud" : "Read-aloud off", "info");
+      }],
+      [MEETING_SHORTCUTS.compact, () => window.dispatchEvent(new Event(TOGGLE_COMPACT_EVENT))],
+    ];
+    const registered: string[] = [];
+    let cancelled = false;
+    (async () => {
+      for (const [key, run] of defs) {
+        try {
+          await unregister(key).catch(() => {});
+          if (cancelled) return;
+          await register(key, (event) => { if (event.state === "Pressed") run(); });
+          registered.push(key);
+          if (cancelled) unregister(key).catch(() => {});
+        } catch (err) {
+          console.warn(`Failed to register shortcut ${key}:`, err);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      registered.forEach((key) => unregister(key).catch(() => {}));
+    };
+  }, [meetingActive]);
 
   // Stealth mode shortcut (user-configurable, re-registered when it changes)
   useEffect(() => {

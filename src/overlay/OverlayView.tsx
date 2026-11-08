@@ -53,7 +53,7 @@ import {
 import { useQuestionStore } from "../stores/questionStore";
 import { useLiveSpeech, stopSpeaking } from "../hooks/useLiveSpeech";
 import { toggleStealthMode } from "../hooks/useGlobalShortcut";
-import { formatShortcut } from "../lib/shortcutLabel";
+import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, formatShortcut } from "../lib/shortcutLabel";
 import { formatDuration } from "../lib/utils";
 
 // ════════════════════════════════════════════════════════════════
@@ -94,6 +94,12 @@ export function OverlayView() {
   useEffect(() => () => {
     if (compactRef.current) leaveCompactWindow().catch(() => {});
   }, []);
+  // The compact-box shortcut (Ctrl+Alt+K) from any app.
+  useEffect(() => {
+    const toggle = () => (compactRef.current ? exitCompact() : enterCompact());
+    window.addEventListener(TOGGLE_COMPACT_EVENT, toggle);
+    return () => window.removeEventListener(TOGGLE_COMPACT_EVENT, toggle);
+  }, [enterCompact, exitCompact]);
 
   // The overlay window stays mounted between meetings, so reset its local UI
   // state whenever a new meeting starts (panels, layout, ask input).
@@ -279,9 +285,9 @@ export function OverlayView() {
             onClick={() => { toggleStealthMode().catch(() => {}); }}
             tooltip={`${stealthMode ? "Hidden from screen share — click to show" : "Visible in screen share — click to hide"} (${formatShortcut(stealthShortcut)})`}
           />
-          <HeaderBtn icon={autoPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />} active={autoPaused} onClick={() => { if (!autoPaused) stopSpeaking(); setAutoPaused(!autoPaused); }} tooltip={autoPaused ? "Resume Auto-Answer" : "Pause Auto-Answer"} />
-          <HeaderBtn icon={<Headphones className="h-3.5 w-3.5" />} active={speakAnswers} onClick={() => setSpeakAnswers(!speakAnswers)} tooltip={speakAnswers ? "Reading answers aloud — click to stop" : "Read answers aloud (in your headset)"} />
-          <HeaderBtn icon={<PictureInPicture2 className="h-3.5 w-3.5" />} onClick={enterCompact} tooltip="Compact answer box (double-click it to come back)" />
+          <HeaderBtn icon={autoPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />} active={autoPaused} onClick={() => { if (!autoPaused) stopSpeaking(); setAutoPaused(!autoPaused); }} tooltip={`${autoPaused ? "Resume Auto-Answer" : "Pause Auto-Answer"} (${formatShortcut(MEETING_SHORTCUTS.pause)})`} />
+          <HeaderBtn icon={<Headphones className="h-3.5 w-3.5" />} active={speakAnswers} onClick={() => setSpeakAnswers(!speakAnswers)} tooltip={`${speakAnswers ? "Reading answers aloud — click to stop" : "Read answers aloud (in your headset)"} (${formatShortcut(MEETING_SHORTCUTS.speak)})`} />
+          <HeaderBtn icon={<PictureInPicture2 className="h-3.5 w-3.5" />} onClick={enterCompact} tooltip={`Compact answer box (${formatShortcut(MEETING_SHORTCUTS.compact)}; double-click it to come back)`} />
           <HeaderBtn icon={<Eye className="h-3.5 w-3.5" />} onClick={cycleOpacity} tooltip={`Transparency: ${Math.round(overlayOpacity * 100)}% (click to cycle)`} />
           <HeaderBtn icon={<Settings className="h-3.5 w-3.5" />} onClick={() => setCurrentView("settings")} tooltip="Settings" />
           <HeaderBtn icon={<Minus className="h-3.5 w-3.5" />} onClick={handleMinimizeToDashboard} tooltip="Minimize to Dashboard (Ctrl+B brings it back)" />

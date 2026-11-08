@@ -19,6 +19,9 @@ These shortcuts are registered system-wide and work regardless of which applicat
 | `Ctrl+,` | Open / Close Settings | Toggles the settings panel |
 | `Ctrl+Shift+H` | Hide from screen share | Turns stealth mode on or off. Change it in Settings > General |
 | `Ctrl+Shift+Space` | Assist from any app | During a meeting, generates AI Assist without switching to NexQ. Stops an automatic answer that's running. Change it in Settings > General |
+| `Ctrl+Alt+P` | Pause / resume Auto-Answer | During a meeting, from any app. Paused, questions still show as cards to click; also stops a reading in progress |
+| `Ctrl+Alt+L` | Read answers aloud | During a meeting, from any app. Reads each sentence in your headset as soon as it is written |
+| `Ctrl+Alt+K` | Compact answer box | During a meeting, from any app. Shows the answer alone in a nearly invisible box you can drag; press again or double-click it to come back |
 
 ## Meeting Shortcuts
 

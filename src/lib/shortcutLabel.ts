@@ -102,7 +102,20 @@ export const RESERVED_SHORTCUTS: Record<string, string> = {
   "CmdOrCtrl+,": "Open settings",
   "CmdOrCtrl+Shift+L": "Dev log",
   "CmdOrCtrl+Shift+D": "Demo mode",
+  "CmdOrCtrl+Alt+P": "Pause / resume Auto-Answer",
+  "CmdOrCtrl+Alt+L": "Read answers aloud",
+  "CmdOrCtrl+Alt+K": "Compact answer box",
 };
+
+/** Overlay shortcuts held during a meeting, from any app (see useGlobalShortcut). */
+export const MEETING_SHORTCUTS = {
+  pause: "CmdOrCtrl+Alt+P",
+  speak: "CmdOrCtrl+Alt+L",
+  compact: "CmdOrCtrl+Alt+K",
+} as const;
+
+/** The overlay listens for this to switch the compact box (from the shortcut). */
+export const TOGGLE_COMPACT_EVENT = "nexq:toggle-compact";
 
 /** The action that already owns `accelerator`, if any. */
 export function reservedShortcutAction(accelerator: string, mac = isMacPlatform()): string | null {
