@@ -25,6 +25,7 @@ use tauri::{
 use commands::audio_commands;
 // == MODULE COMMANDS: stt ==
 use commands::stt_commands;
+use commands::story_commands;
 // == MODULE COMMANDS: llm ==
 use commands::llm_commands;
 use commands::log_commands;
@@ -640,6 +641,7 @@ pub fn run() {
             // == COMMANDS: translation ==
             translation_commands::set_translation_provider,
             translation_commands::translate_text,
+            story_commands::generate_star_stories,
             translation_commands::translate_segments,
             translation_commands::translate_batch,
             translation_commands::detect_language,

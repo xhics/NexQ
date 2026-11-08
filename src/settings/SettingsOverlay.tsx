@@ -25,13 +25,15 @@ import {
   Volume2,
   BarChart2,
   Globe,
+  BookOpen,
 } from "lucide-react";
 import { ContextStrategySettings } from "./ContextStrategySettings";
 import { AIActionsSettings } from "./AIActionsSettings";
+import { StoriesSettings } from "./StoriesSettings";
 import { TranslationSettings } from "./TranslationSettings";
 import { Sparkles } from "lucide-react";
 
-type SettingsTab = "meeting_audio" | "llm" | "stt" | "translation" | "ai_actions" | "context_strategy" | "scenarios" | "noise_presets" | "confidence" | "hotkeys" | "general" | "about";
+type SettingsTab = "meeting_audio" | "llm" | "stt" | "translation" | "ai_actions" | "stories" | "context_strategy" | "scenarios" | "noise_presets" | "confidence" | "hotkeys" | "general" | "about";
 
 // ── Tab groups for sidebar (contextually organized, importance-ordered) ──
 interface TabItem {
@@ -64,6 +66,7 @@ const TAB_GROUPS: TabGroup[] = [
     label: "Intelligence",
     items: [
       { id: "ai_actions", label: "AI Actions", icon: <Sparkles className="h-4 w-4" /> },
+      { id: "stories", label: "Prepared Answers", icon: <BookOpen className="h-4 w-4" /> },
       { id: "context_strategy", label: "Context Strategy", icon: <Database className="h-4 w-4" /> },
       { id: "scenarios", label: "AI Scenarios", icon: <Theater className="h-4 w-4" /> },
       { id: "noise_presets", label: "Noise Presets", icon: <Volume2 className="h-4 w-4" /> },
@@ -155,6 +158,8 @@ export function SettingsOverlay({ isModal = false }: SettingsOverlayProps) {
         return <LLMSettings />;
       case "ai_actions":
         return <AIActionsSettings />;
+      case "stories":
+        return <StoriesSettings />;
       case "context_strategy":
         return <ContextStrategySettings />;
       case "scenarios":

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AnswerMarkdown } from "./CueLine";
+import { PreparedStory, usePreparedStory } from "./PreparedStory";
 import { Maximize2, Eye, Pause, Play, Headphones } from "lucide-react";
 import { stopSpeaking } from "../hooks/useLiveSpeech";
 import { useQuestionStore } from "../stores/questionStore";
@@ -136,7 +137,9 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   }, []);
 
   // Starts at the top and moves at reading pace, not to the newest words.
-  const reading = useReadingScroll(scrollRef, content, null, speed);
+  // A prepared story for the question shows first, at once.
+  const prepared = usePreparedStory();
+  const reading = useReadingScroll(scrollRef, content, prepared.story?.id ?? null, speed);
 
   const startDrag = (e: React.MouseEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
@@ -204,6 +207,11 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
       )}
 
       <div ref={scrollRef} {...reading} className="min-h-0 flex-1 overflow-y-auto px-3 py-2" style={{ scrollbarWidth: "none" }} aria-live="polite">
+        {prepared.story && (
+          <div style={{ color, textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.6)" }}>
+            <PreparedStory story={prepared.story} fontSize={fontSize + 3} onHide={prepared.hide} />
+          </div>
+        )}
         {error ? (
           <p className="text-xs text-destructive/80">{error}</p>
         ) : content ? (
