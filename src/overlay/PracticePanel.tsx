@@ -84,8 +84,8 @@ export function PracticePanel() {
     if (!q) return;
     store.setPhase("scoring");
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const text = await invoke<string>("score_practice_answer", { question: q.question, answer, reference: q.reference ?? null, language: "French" });
+      const { scorePracticeAnswer } = await import("../lib/ipc");
+      const text = await scorePracticeAnswer(q.question, answer, q.reference ?? null, "French");
       const parsed = parsePracticeResult(text);
       usePracticeStore.getState().setResult(parsed);
       void speakOnce(`${String(parsed.score).replace(".", ",")} sur dix. ${parsed.feedback}`);

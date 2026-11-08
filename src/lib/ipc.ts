@@ -862,3 +862,25 @@ export async function askMeeting(meetingId: string, question: string, requestId:
 export async function listMeetingChat(meetingId: string): Promise<MeetingChatMessage[]> {
   return invoke<MeetingChatMessage[]>("list_meeting_chat", { meetingId });
 }
+
+// == IPC: Interview copilot ==
+
+/** Whether the running system capture leaves out NexQ's own sound (its read-aloud voice). */
+export async function systemCaptureExcludesSelf(): Promise<boolean> {
+  return invoke("system_capture_excludes_self");
+}
+
+/** STAR stories from the attached documents (and the job, if given), as the model's JSON text. */
+export async function generateStarStories(jobDescription: string, language: string, count = 10): Promise<string> {
+  return invoke("generate_star_stories", { jobDescription, language, count });
+}
+
+/** A debrief of an interview transcript ("You:" / "Them:" lines), as the model's JSON text. */
+export async function generateInterviewDebrief(transcript: string, language: string): Promise<string> {
+  return invoke("generate_interview_debrief", { transcript, language });
+}
+
+/** A practice answer's score, feedback and better answer, as the model's JSON text. */
+export async function scorePracticeAnswer(question: string, answer: string, reference: string | null, language: string): Promise<string> {
+  return invoke("score_practice_answer", { question, answer, reference, language });
+}

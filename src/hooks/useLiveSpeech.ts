@@ -16,8 +16,8 @@ let speaking = false;
 let captureExcludesSelf = false;
 
 function refreshCaptureExcludesSelf(): void {
-  import("@tauri-apps/api/core")
-    .then(({ invoke }) => invoke<boolean>("system_capture_excludes_self"))
+  import("../lib/ipc")
+    .then(({ systemCaptureExcludesSelf }) => systemCaptureExcludesSelf())
     .then((v) => { captureExcludesSelf = v; })
     .catch(() => { captureExcludesSelf = false; });
 }

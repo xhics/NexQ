@@ -61,8 +61,8 @@ export function DebriefTab({ meeting }: { meeting: Meeting }) {
     setBusy(true);
     setError(null);
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const text = await invoke<string>("generate_interview_debrief", { transcript: transcriptText(meeting), language: "French" });
+      const { generateInterviewDebrief } = await import("../../lib/ipc");
+      const text = await generateInterviewDebrief(transcriptText(meeting), "French");
       const parsed = parseDebrief(text);
       setItems(parsed);
       setSaved(new Set());

@@ -153,7 +153,7 @@ export const useStoryStore = create<StoryState>((set, get) => ({
 
 /** Writes stories from the CV (and the job, when given), replacing none: they are added. */
 export async function generateStories(jobDescription: string, language: string): Promise<StarStory[]> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  const text = await invoke<string>("generate_star_stories", { jobDescription, language, count: 10 });
+  const { generateStarStories } = await import("../lib/ipc");
+  const text = await generateStarStories(jobDescription, language);
   return parseStories(text);
 }

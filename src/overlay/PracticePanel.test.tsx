@@ -2,8 +2,8 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../hooks/useLiveSpeech", () => ({ speakOnce: vi.fn(async () => {}), stopSpeaking: vi.fn() }));
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+const scorePracticeAnswer = vi.hoisted(() => vi.fn());
+vi.mock("../lib/ipc", () => ({ scorePracticeAnswer }));
 
 import { ANSWER_DONE_QUIET_MS, PracticePanel, stopPractice } from "./PracticePanel";
 import { parsePracticeResult, practiceQuestions, usePracticeStore } from "../stores/practiceStore";
@@ -39,7 +39,7 @@ describe("practice", () => {
 
   it("asks aloud, listens to your answer, scores it once you pause", async () => {
     vi.useFakeTimers();
-    invoke.mockResolvedValue('{"score": 7, "feedback": "Clair mais sans chiffres.", "improve": ["Donner un résultat chiffré"], "better": "J\'ai…"}');
+    scorePracticeAnswer.mockResolvedValue('{"score": 7, "feedback": "Clair mais sans chiffres.", "improve": ["Donner un résultat chiffré"], "better": "J\'ai…"}');
     useQuestionStore.getState().setPaused(true);
     usePracticeStore.getState().start([{ question: "Parle-moi d'un échec", reference: "Ref" }]);
     render(<PracticePanel />);
@@ -48,9 +48,9 @@ describe("practice", () => {
 
     act(() => { useTranscriptStore.setState({ segments: [line("u1", "User", "Alors un projet RAG chez un client qui n'a pas tenu en production")] }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(ANSWER_DONE_QUIET_MS + 1000); });
-    expect(invoke).toHaveBeenCalledWith("score_practice_answer", expect.objectContaining({
-      question: "Parle-moi d'un échec", answer: "Alors un projet RAG chez un client qui n'a pas tenu en production", reference: "Ref",
-    }));
+    expect(scorePracticeAnswer).toHaveBeenCalledWith(
+      "Parle-moi d'un échec", "Alors un projet RAG chez un client qui n'a pas tenu en production", "Ref", "French",
+    );
     expect(usePracticeStore.getState().phase).toBe("feedback");
     expect(screen.getByText("7/10")).toBeTruthy();
 
