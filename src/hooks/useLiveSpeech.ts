@@ -3,7 +3,8 @@ import { useStreamStore } from "../stores/streamStore";
 import { useConfigStore } from "../stores/configStore";
 import { logToFile } from "../lib/logger";
 import { useQuestionStore } from "../stores/questionStore";
-import { matchStory, useStoryStore } from "../stores/storyStore";
+import { useStoryStore } from "../stores/storyStore";
+import { findStory } from "../stores/storyMeaning";
 
 /**
  * After the voice stops, its echo can still be in the transcript this long:
@@ -147,9 +148,11 @@ export function useLiveSpeech(): void {
     // The question whose prepared story is being read (its AI answer stays silent).
     let storyQuestion: string | null = null;
     let storyId: string | null = null;
-    const onQuestion = (question: string) => {
+    const onQuestion = async (question: string) => {
       if (!question || useQuestionStore.getState().paused) return;
-      const story = matchStory(question, useStoryStore.getState().stories);
+      // By its words at once, else by meaning (a few tens of ms with Ollama).
+      const story = await findStory(question, useStoryStore.getState().stories);
+      if (question !== lastQuestion) return; // a newer question came meanwhile
       if (!story) {
         storyQuestion = null;
         return;
@@ -166,7 +169,7 @@ export function useLiveSpeech(): void {
       const question = s.questions[0]?.text ?? "";
       if (question === lastQuestion) return;
       lastQuestion = question;
-      onQuestion(question);
+      void onQuestion(question);
     });
 
     const onChange = (state: ReturnType<typeof useStreamStore.getState>) => {

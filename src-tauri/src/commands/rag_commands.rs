@@ -238,6 +238,21 @@ pub async fn test_ollama_embedding_connection(
         .map_err(|e| format!("Failed to serialize connection status: {}", e))
 }
 
+/// Embeds short texts as given (the caller adds the model's task prefix), for
+/// matching a question to prepared answers by meaning.
+#[command]
+pub async fn embed_texts(texts: Vec<String>, state: State<'_, AppState>) -> Result<Vec<Vec<f32>>, String> {
+    if texts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (base_url, model) = {
+        let rag_arc = state.rag.as_ref().ok_or_else(|| "RAG manager not initialized".to_string())?;
+        let mgr = rag_arc.lock().map_err(|e| e.to_string())?;
+        (mgr.embedder_url(), mgr.embedding_model())
+    };
+    OllamaEmbedder::new(&base_url).embed_texts(texts, &model).await
+}
+
 /// Loads the embedding model in Ollama ahead of the first question (a meeting
 /// starting), so that question doesn't wait 1-3 s for it. Returns how long it took.
 #[command]

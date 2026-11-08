@@ -632,6 +632,7 @@ pub fn run() {
             rag_commands::update_rag_config,
             rag_commands::test_ollama_embedding_connection,
             rag_commands::warm_up_embedder,
+            rag_commands::embed_texts,
             rag_commands::pull_embedding_model,
             rag_commands::test_rag_answer,
             rag_commands::remove_file_rag_index,

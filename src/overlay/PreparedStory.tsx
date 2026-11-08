@@ -2,23 +2,37 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpen, X } from "lucide-react";
 import { useQuestionStore } from "../stores/questionStore";
 import { matchStory, useStoryStore, type StarStory } from "../stores/storyStore";
+import { matchStoryByMeaning } from "../stores/storyMeaning";
 import { CueLine } from "./CueLine";
 import { covered } from "../hooks/useSaidSinceAnswer";
 
 /**
  * The prepared story that answers the newest question, if one does: shown
- * at once, while the AI is still writing. Hidden for that question once closed.
+ * at once (by its words), or a moment later by meaning when Ollama runs.
+ * Hidden for that question once closed.
  */
 export function usePreparedStory(): { story: StarStory | null; hide: () => void } {
   const stories = useStoryStore((s) => s.stories);
   const question = useQuestionStore((s) => s.questions[0]?.text ?? "");
   const [hiddenFor, setHiddenFor] = useState<string | null>(null);
+  const [byMeaning, setByMeaning] = useState<{ question: string; story: StarStory | null } | null>(null);
 
   useEffect(() => {
     void useStoryStore.getState().load();
   }, []);
 
-  const story = useMemo(() => (question && stories.length ? matchStory(question, stories) : null), [question, stories]);
+  const byWords = useMemo(() => (question && stories.length ? matchStory(question, stories) : null), [question, stories]);
+
+  useEffect(() => {
+    if (!question || byWords || stories.length === 0) return;
+    let current = true;
+    void matchStoryByMeaning(question, stories).then((story) => {
+      if (current) setByMeaning({ question, story });
+    });
+    return () => { current = false; };
+  }, [question, byWords, stories]);
+
+  const story = byWords ?? (byMeaning?.question === question ? byMeaning.story : null);
   return {
     story: story && hiddenFor !== question ? story : null,
     hide: () => setHiddenFor(question),

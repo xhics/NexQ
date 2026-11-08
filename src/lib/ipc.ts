@@ -889,3 +889,8 @@ export async function scorePracticeAnswer(question: string, answer: string, refe
 export async function warmUpEmbedder(): Promise<number> {
   return invoke("warm_up_embedder");
 }
+
+/** Embeddings of short texts, as given (add the model's task prefix yourself). */
+export async function embedTexts(texts: string[]): Promise<number[][]> {
+  return invoke("embed_texts", { texts });
+}
