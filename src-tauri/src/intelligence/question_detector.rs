@@ -88,6 +88,7 @@ const FRENCH_PATTERNS: &[&str] = &[
     "est-ce que", "est-ce qu'", "qu'est-ce", "un exemple concret", "un exemple précis",
     "nouvelle question", "question suivante", "prochaine question", "première question", "deuxième question",
     "troisième question", "quatrième question", "cinquième question", "dernière question", "autre question",
+    "passons à une question", "passons à la question", "j'ai une question", "une question plus", "une question un peu",
     "j'aimerais savoir", "je voudrais savoir", "j'aimerais comprendre", "je voudrais comprendre",
     "je vous écoute", "je t'écoute",
 ];

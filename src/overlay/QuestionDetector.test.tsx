@@ -322,6 +322,12 @@ describe("Auto-Trigger", () => {
     expect(runUserAction).toHaveBeenCalledWith("FollowUp", "Est-ce que tu as des questions pour nous ?", expect.anything());
   });
 
+  it("answers a question announced then set out as a scenario", () => {
+    expect(whatToAnswer("Passons à une question plus stratégique. Tu arrives sur un projet critique. La direction pousse pour livrer vite", false))
+      .toBe("Passons à une question plus stratégique. Tu arrives sur un projet critique. La direction pousse pour livrer vite");
+    expect(whatToAnswer("C'est une bonne réponse, je te donne huit sur dix. Merci.", false)).toBeNull();
+  });
+
   it("leaves short acknowledgements and statements alone unless set to every turn", () => {
     expect(whatToAnswer("Oui, vas-y.", true)).toBeNull();
     expect(whatToAnswer("D'accord ?", true)).toBeNull();
@@ -514,6 +520,7 @@ describe("QuestionDetector", () => {
       "Qu'est-ce que tu as appris et qu'est-ce que tu fais différemment",
       "Oui je reprends Question suivante, dans ton parcours sur des projets d'automatisation",
       "J'aimerais savoir pourquoi tu as quitté ton dernier poste",
+      "Passons à une question plus stratégique. Tu arrives sur un projet critique avec six mois de retard",
       "Et pourquoi ce choix plutôt qu'un autre",
     ]) {
       expect(looksLikeQuestion(q), q).toBe(true);

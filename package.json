@@ -12,7 +12,8 @@
     "release:dry-run": "node scripts/release.js --dry-run",
     "sync-version": "node scripts/sync-version.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "report:questions": "node scripts/question-report.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.24",

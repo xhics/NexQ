@@ -81,6 +81,7 @@ const FRENCH_PATTERNS = [
   "est-ce que", "est-ce qu'", "qu'est-ce", "un exemple concret", "un exemple précis",
   "nouvelle question", "question suivante", "prochaine question", "première question", "deuxième question",
   "troisième question", "quatrième question", "cinquième question", "dernière question", "autre question",
+  "passons à une question", "passons à la question", "j'ai une question", "une question plus", "une question un peu",
   "j'aimerais savoir", "je voudrais savoir", "j'aimerais comprendre", "je voudrais comprendre",
   "je vous écoute", "je t'écoute",
 ];
@@ -150,8 +151,15 @@ export const TURN_MIN_WORDS = 4;
 export function whatToAnswer(text: string, everyTurn: boolean): string | null {
   const sentence = lastSentence(text);
   if (sentence && looksLikeQuestion(sentence)) return sentence;
-  if (!everyTurn) return null;
   const sentences = (text.trim().match(/[^.?!。？！\n]+[.?!。？！]*/gu) ?? []).map((s) => s.trim()).filter(Boolean);
+  // "Passons à une question plus stratégique. Tu arrives sur un projet…": the
+  // question is announced, then set out as a scenario. Answer the whole of it.
+  for (let i = sentences.length - 2; i >= Math.max(0, sentences.length - 6); i--) {
+    if (/\bquestions?\b/u.test(sentences[i].toLowerCase()) && looksLikeQuestion(sentences[i])) {
+      return sentences.slice(i).join(" ").slice(0, 600);
+    }
+  }
+  if (!everyTurn) return null;
   const tail: string[] = [];
   for (let i = sentences.length - 1; i >= 0 && tail.length < 3; i--) {
     tail.unshift(sentences[i]);
