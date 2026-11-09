@@ -194,6 +194,24 @@ pub fn blur_behind_while_visible<R: Runtime>(window: &Window<R>) {
     }
 }
 
+/// Turn the overlay's desktop blur off (the compact box, which should be see
+/// through) or back on (the full overlay). The CSS background alone can't make
+/// the box transparent while the window blurs what is behind it.
+#[command]
+pub fn set_window_blur(window: Window, on: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = window.hwnd().map_err(|e| format!("no window handle: {e}"))?.0 as isize;
+        let visible = window.is_visible().unwrap_or(false);
+        window
+            .run_on_main_thread(move || visibility_hook::want_blur(hwnd, on, visible))
+            .map_err(|e| format!("couldn't reach the main thread: {e}"))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = (window, on);
+    Ok(())
+}
+
 /// A window subclass that follows a window being shown and hidden: just before
 /// the window is shown it gets the stealth setting, and its blur-behind turns
 /// on and off with it. A window being hidden keeps its affinity (see
@@ -205,7 +223,8 @@ mod visibility_hook {
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowDisplayAffinity, SWP_HIDEWINDOW, SWP_SHOWWINDOW, WINDOWPOS, WINDOW_DISPLAY_AFFINITY,
+        GetWindowDisplayAffinity, SetWindowDisplayAffinity, SWP_HIDEWINDOW, SWP_SHOWWINDOW, WINDOWPOS,
+        WINDOW_DISPLAY_AFFINITY,
         WM_NCDESTROY, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
@@ -228,6 +247,16 @@ mod visibility_hook {
         }
         drop(blurred);
         set_blur(HWND(hwnd as *mut _), visible_now);
+    }
+
+    /// Blur `hwnd` from now on (while visible), or not at all (main thread only).
+    pub fn want_blur(hwnd: isize, on: bool, visible_now: bool) {
+        if on {
+            blur_while_visible(hwnd, visible_now);
+            return;
+        }
+        BLURRED.lock().unwrap_or_else(|e| e.into_inner()).retain(|&h| h != hwnd);
+        set_blur(HWND(hwnd as *mut _), false);
     }
 
     fn wants_blur(hwnd: HWND) -> bool {
@@ -335,9 +364,13 @@ mod visibility_hook {
             WM_WINDOWPOSCHANGING => {
                 let pos = &*(lparam.0 as *const WINDOWPOS);
                 // About to be shown: apply the stealth setting first, so no
-                // frame of it reaches a screen share.
+                // frame of it reaches a screen share. Applied every time, not
+                // only when the remembered state differs: a hidden window can
+                // lose its affinity (the overlay between two meetings), and
+                // trusting the memory left it visible in screen shares from
+                // the second meeting on.
                 let on = super::stealth_enabled();
-                if pos.flags.contains(SWP_SHOWWINDOW) && is_excluded(hwnd) != on {
+                if pos.flags.contains(SWP_SHOWWINDOW) && (on || is_excluded(hwnd)) {
                     if let Err(e) = set_excluded(hwnd, on) {
                         log::warn!("Stealth mode: SetWindowDisplayAffinity failed: {e}");
                     }
@@ -352,6 +385,20 @@ mod visibility_hook {
                 // Shown: the accent only takes on a visible window.
                 if pos.flags.contains(SWP_SHOWWINDOW) && wants_blur(hwnd) {
                     set_blur(hwnd, true);
+                }
+                // Shown: check with Windows that the window really is left out
+                // of capture, and set it again if not.
+                if pos.flags.contains(SWP_SHOWWINDOW) && super::stealth_enabled() {
+                    let mut affinity = 0u32;
+                    let read = GetWindowDisplayAffinity(hwnd, &mut affinity).is_ok();
+                    if !read || affinity != WDA_EXCLUDEFROMCAPTURE {
+                        log::warn!(
+                            "Stealth mode: a window was shown without its screen-share exclusion (affinity {affinity:#x}); setting it again"
+                        );
+                        if let Err(e) = set_excluded(hwnd, true) {
+                            log::warn!("Stealth mode: SetWindowDisplayAffinity failed: {e}");
+                        }
+                    }
                 }
             }
             WM_NCDESTROY => {

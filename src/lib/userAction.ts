@@ -20,6 +20,13 @@ export function actionLabel(mode: string): string {
   return cfg?.name || getModeLabel(mode as IntelligenceMode) || mode;
 }
 
+/** The last action asked for (by you or Auto-Answer), for Retry after an error. */
+let lastAction: { mode: string; question?: string } | null = null;
+
+export function lastUserAction(): { mode: string; question?: string } | null {
+  return lastAction;
+}
+
 /**
  * Resolves once the answer has finished (or was stopped); rejects when it
  * couldn't start, e.g. "Generation already in progress". `requestId` lets the
@@ -30,6 +37,7 @@ export async function runUserAction(
   customQuestion?: string,
   opts: { requestId?: string } = {},
 ): Promise<void> {
+  lastAction = { mode, question: customQuestion };
   const config = useConfigStore.getState();
   const setting = config.contextScope ?? DEFAULT_CONTEXT_SCOPE;
   const stream = useStreamStore.getState();

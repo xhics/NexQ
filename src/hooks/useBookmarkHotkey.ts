@@ -1,8 +1,8 @@
-// Task 16: Bookmark hotkey hook
-// Listens for Ctrl+B keydown while recording and adds a bookmark at current offset.
-// Returns an addBookmarkAtNow() function for manual invocation (toolbar button).
+// Adds a bookmark at the current offset of the meeting. The B key
+// (useMeetingShortcuts) and the toolbar call the function it returns; Ctrl+B
+// is the global show / hide overlay shortcut.
 
-import { useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { useMeetingStore } from "../stores/meetingStore";
 import { useBookmarkStore } from "../stores/bookmarkStore";
 import { showBookmarkToast } from "../overlay/BookmarkToast";
@@ -18,22 +18,6 @@ export function useBookmarkHotkey(): () => void {
     const bookmark = addBookmark(offsetMs);
     showBookmarkToast(bookmark.id, offsetMs);
   }, [isRecording, meetingStartTime, addBookmark]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "b" && !e.shiftKey && !e.altKey) {
-        // Only fire when recording; don't fire in input/textarea elements
-        const target = e.target as HTMLElement;
-        const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
-        if (!isRecording || isInput) return;
-        e.preventDefault();
-        addBookmarkAtNow();
-      }
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [isRecording, addBookmarkAtNow]);
 
   return addBookmarkAtNow;
 }

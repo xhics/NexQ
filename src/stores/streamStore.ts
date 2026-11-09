@@ -49,6 +49,11 @@ interface StreamState {
   phase: StreamPhase;
   /** Epoch ms the user acted (or the stream started, when not user-invoked). */
   requestStartedAt: number | null;
+  /**
+   * Epoch ms the answer on screen began: a continuation (the rest of an
+   * answer started early) keeps its start, so what you said stays marked.
+   */
+  answerSince: number | null;
   /** Epoch ms the first visible words arrived. */
   firstTokenAt: number | null;
   streamMeta: StreamMeta | null;
@@ -77,6 +82,16 @@ interface StreamState {
   isRunning: (requestId: string) => boolean;
   /** When `requestId` ends, drop it: not kept in History, not left on screen. */
   discardRequest: (requestId: string) => void;
+  /**
+   * `requestId` continues the answer on screen: its words are added after
+   * it, and the whole replaces it in History.
+   */
+  markContinuation: (requestId: string) => void;
+  /**
+   * `requestId` may find nothing was asked: the answer on screen stays until
+   * its first words, and for good if it answers NOTHING_MARK.
+   */
+  markTentative: (requestId: string) => void;
   setPhase: (phase: StreamPhase) => void;
   startStream: (mode: IntelligenceMode, model: string, provider: string, details?: StreamStartDetails) => void;
   setSources: (sources: StreamSource[]) => void;
@@ -102,6 +117,58 @@ const IDLE_PROGRESS = {
 /** Requests to drop when they end (automatic answers NexQ stopped). */
 const discarded = new Set<string>();
 
+/**
+ * Requests that continue an answer (its text, and its History entry to
+ * replace), or, `tentative`, that may answer nothing: the answer on screen
+ * stays until their first words, and stays for good if they answer NOTHING_MARK.
+ */
+type Continuation = { prefix: string; replaces: string | null; tentative?: boolean };
+const continuations = new Map<string, Continuation>();
+
+/** What a continuation's own words go after (a tentative answer's own words replace the answer). */
+const continued = (cont: Continuation) => (!cont.tentative && cont.prefix.trim() ? `${cont.prefix.trimEnd()}\n\n` : "");
+
+/** What an answer that finds it was asked nothing replies, alone. */
+export const NOTHING_MARK = "∅";
+
+/** Tentative requests that answered NOTHING_MARK (cleared when asked about). */
+const answeredNothingIds = new Set<string>();
+
+/** Whether `requestId` was a tentative answer that found nothing was asked. Asks once. */
+export function answeredNothing(requestId: string): boolean {
+  return answeredNothingIds.delete(requestId);
+}
+
+/**
+ * A continuation that starts with this line found the answer's start had
+ * misread the question: what follows replaces the whole answer.
+ */
+export const REDO_MARK = "↻";
+
+/**
+ * What shows of `raw` (think tags left out). For a continuation whose own
+ * words start with REDO_MARK, only what follows it: the start goes.
+ */
+function visible(raw: string, requestId: string | null): { content: string; redone: boolean; held: boolean } {
+  const cont = requestId !== null ? continuations.get(requestId) : undefined;
+  if (cont?.tentative) {
+    // Until its first words, and for good if it answers nothing, the answer on screen stays.
+    const own = stripThinkTags(raw).trimStart();
+    const held = own === "" || own.startsWith(NOTHING_MARK);
+    return { content: held ? cont.prefix : stripThinkTags(raw), redone: false, held };
+  }
+  if (cont) {
+    const start = continued(cont);
+    const own = stripThinkTags(raw.slice(start.length)).trimStart();
+    // Nothing to add: the answer stays as it was.
+    if (raw.startsWith(start) && own.startsWith(NOTHING_MARK)) return { content: cont.prefix, redone: false, held: true };
+    if (raw.startsWith(start) && own.startsWith(REDO_MARK)) {
+      return { content: own.slice(REDO_MARK.length).trimStart(), redone: true, held: false };
+    }
+  }
+  return { content: stripThinkTags(raw), redone: false, held: false };
+}
+
 export const useStreamStore = create<StreamState>((set, get) => ({
   isStreaming: false,
   currentContent: "",
@@ -117,15 +184,23 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   responseHistory: [],
   pinnedResponses: [],
   lastUserRequest: NO_USER_REQUESTS,
+  answerSince: null,
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
 
   appendToken: (token) =>
     set((state) => {
       const raw = state._rawContent + token;
-      const content = stripThinkTags(raw);
+      const { content, redone, held } = visible(raw, state.streamRequestId);
+      const before = visible(state._rawContent, state.streamRequestId);
       const progress: Partial<StreamState> = {};
-      if (state.firstTokenAt === null && content.trim().length > 0) {
+      // Started over, or a tentative answer's first words: a new answer, what
+      // you said of the one before no longer counts.
+      if ((redone && !before.redone) || (!held && before.held)) progress.answerSince = Date.now();
+      if (held) {
+        // Nothing of its own shows yet.
+        if (state.firstTokenAt === null && raw.trim().length > 0) progress.phase = "thinking";
+      } else if (state.firstTokenAt === null && content.trim().length > 0) {
         progress.firstTokenAt = Date.now();
         progress.phase = "writing";
       } else if (state.firstTokenAt === null && raw.trim().length > 0) {
@@ -139,24 +214,37 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     // A second press while one is running or still sending is refused by the
     // backend; it must not take over the first request's progress.
     if (get().isStreaming || get().phase === "sending") return;
+    const cont = continuations.get(requestId);
+    const now = Date.now();
     set({
       phase: "sending",
       pendingRequestId: requestId,
-      requestStartedAt: Date.now(),
+      requestStartedAt: now,
+      answerSince: cont ? get().answerSince ?? now : now,
       firstTokenAt: null,
       streamMeta: null,
       currentMode: mode as IntelligenceMode,
-      currentContent: "",
-      _rawContent: "",
+      // A continuation keeps the answer's start on screen; a tentative
+      // answer, the answer before it.
+      currentContent: cont ? cont.prefix : "",
+      _rawContent: cont && !cont.tentative ? cont.prefix : "",
       currentSources: [],
-      currentId: null,
+      currentId: cont?.tentative ? cont.replaces : null,
       error: null,
     });
   },
 
   clearPending: (requestId) => {
     if (get().pendingRequestId !== requestId) return;
-    set({ ...IDLE_PROGRESS, currentMode: get().isStreaming ? get().currentMode : null });
+    // A continuation stopped before its first word: the answer it was to
+    // continue stays on screen, as it was.
+    const cont = continuations.get(requestId);
+    continuations.delete(requestId);
+    set({
+      ...IDLE_PROGRESS,
+      currentMode: get().isStreaming || cont ? get().currentMode : null,
+      ...(cont ? { currentContent: cont.prefix, _rawContent: cont.prefix, currentId: cont.replaces } : {}),
+    });
   },
 
   isRunning: (requestId) => {
@@ -168,6 +256,16 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     discarded.add(requestId);
   },
 
+  markContinuation: (requestId) => {
+    const state = get();
+    continuations.set(requestId, { prefix: state.currentContent, replaces: state.currentId });
+  },
+
+  markTentative: (requestId) => {
+    const state = get();
+    continuations.set(requestId, { prefix: state.currentContent, replaces: state.currentId, tentative: true });
+  },
+
   setPhase: (phase) => set({ phase }),
 
   startStream: (mode, model, provider, details = {}) => {
@@ -176,10 +274,13 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       state.pendingRequestId !== null &&
       state.requestStartedAt !== null &&
       (details.requestId == null || details.requestId === state.pendingRequestId);
+    const cont = details.requestId ? continuations.get(details.requestId) : undefined;
+    const start = cont ? continued(cont) : "";
     set({
       isStreaming: true,
-      currentContent: "",
-      _rawContent: "",
+      currentContent: cont?.tentative ? cont.prefix : start,
+      _rawContent: start,
+      answerSince: cont || fromClick ? state.answerSince ?? Date.now() : Date.now(),
       currentMode: mode,
       currentModel: model,
       currentProvider: provider,
@@ -191,7 +292,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       firstTokenAt: null,
       pendingRequestId: null,
       streamRequestId: details.requestId ?? null,
-      currentId: null,
+      currentId: cont?.tentative ? cont.replaces : null,
       streamMeta: {
         model,
         provider,
@@ -207,7 +308,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   endStream: (latencyMs) => {
     const state = get();
     // Strip <think> tags from the final stored content
-    const content = stripThinkTags(state._rawContent);
+    const { content, held } = visible(state._rawContent, state.streamRequestId);
     const now = Date.now();
     const started = state.requestStartedAt;
     const response: AIResponse = {
@@ -226,16 +327,25 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     };
     // A stream stopped before any words is nothing to keep, nor is one NexQ
     // stopped and asked to drop.
-    const dropped = state.streamRequestId !== null && discarded.delete(state.streamRequestId);
+    const cont = state.streamRequestId !== null ? continuations.get(state.streamRequestId) : undefined;
+    // A tentative answer that found nothing was asked leaves the one before as it was.
+    if (cont && held && state.streamRequestId !== null) answeredNothingIds.add(state.streamRequestId);
+    const dropped = state.streamRequestId !== null && (discarded.delete(state.streamRequestId) || (!!cont && held));
     const keep = !dropped && content.trim().length > 0;
+    // A continuation replaces the answer it continued in History; dropped,
+    // it leaves that answer on screen as it was. A tentative answer is a new one.
+    if (state.streamRequestId !== null) continuations.delete(state.streamRequestId);
+    const replaced = keep && cont?.replaces && !cont.tentative ? cont.replaces : null;
 
     set((s) => ({
       isStreaming: false,
-      currentContent: dropped ? "" : content,
+      currentContent: dropped ? cont?.prefix ?? "" : content,
       latencyMs,
       ...IDLE_PROGRESS,
-      currentId: keep ? response.id : null,
-      responseHistory: keep ? [response, ...s.responseHistory].slice(0, RESPONSE_HISTORY_CAP) : s.responseHistory,
+      currentId: keep ? response.id : dropped ? cont?.replaces ?? null : null,
+      responseHistory: keep
+        ? [response, ...s.responseHistory.filter((r) => r.id !== replaced)].slice(0, RESPONSE_HISTORY_CAP)
+        : s.responseHistory,
     }));
   },
 
@@ -282,6 +392,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   resetForMeeting: () => {
     discarded.clear();
+    continuations.clear();
+    answeredNothingIds.clear();
     get().clearCurrent();
     set({ isStreaming: false, responseHistory: [], pinnedResponses: [], lastUserRequest: NO_USER_REQUESTS });
   },

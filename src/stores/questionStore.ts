@@ -19,6 +19,15 @@ export interface AutoAnswerRef {
   early: boolean;
   /** Settles once the answer has finished, was stopped, or was refused. */
   done: Promise<void>;
+  /** For a turn that may ask nothing: the AI answers only if something was asked. */
+  tentative?: boolean;
+  /**
+   * A first draft, written while the question was still being asked: once
+   * the other party has finished, the rest is added after it.
+   */
+  draft?: boolean;
+  /** Epoch ms it started. */
+  startedAt?: number;
 }
 
 /** Text of each final line when it was last checked for a question. */
@@ -42,6 +51,8 @@ interface QuestionState {
   holdBackUnanswered: () => void;
   markAssisted: (index: number) => void;
   dismiss: (index: number) => void;
+  /** Takes the line's card away: it asked nothing. */
+  dismissLine: (segmentId: string) => void;
   clear: () => void;
 
   /** The newest automatic answer NexQ started (it may have finished since). */
@@ -82,8 +93,8 @@ export const useQuestionStore = create<QuestionState>((set) => ({
       if (segmentId) {
         const i = prev.findIndex((p) => p.segmentId === segmentId);
         if (i >= 0) {
-          if (prev[i].assisted || prev[i].text === q.text) return state;
-          return { questions: prev.map((p, j) => (j === i ? { ...p, text: q.text, heldBack: false } : p)) };
+          if (prev[i].assisted || (prev[i].text === q.text && !prev[i].unsure === !q.unsure)) return state;
+          return { questions: prev.map((p, j) => (j === i ? { ...p, text: q.text, unsure: q.unsure, heldBack: false } : p)) };
         }
       }
       if (prev.length > 0 && prev[0].text === q.text) return state;
@@ -110,6 +121,9 @@ export const useQuestionStore = create<QuestionState>((set) => ({
 
   dismiss: (index) =>
     set((state) => ({ questions: state.questions.filter((_, i) => i !== index) })),
+
+  dismissLine: (segmentId) =>
+    set((state) => ({ questions: state.questions.filter((q) => q.segmentId !== segmentId) })),
 
   clear: () => {
     checkedText.clear();
@@ -142,7 +156,7 @@ export const useQuestionStore = create<QuestionState>((set) => ({
   reviseLine: (segmentId, text) =>
     set((state) => ({
       questions: state.questions.map((q) =>
-        q.segmentId === segmentId ? { ...q, text, assisted: false, heldBack: false } : q),
+        q.segmentId === segmentId ? { ...q, text, unsure: false, assisted: false, heldBack: false } : q),
     })),
 
   markTurnLine: (segmentId) => {

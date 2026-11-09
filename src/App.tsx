@@ -33,6 +33,9 @@ import { SHOW_MEETING_OVERLAY_EVENT, showLauncherWindow, showMeetingOverlay, sho
 import { logToFile } from "./lib/logger";
 import { emitOverlayMeetingReady, onCaptureWarning, onOverlayMeetingReady, onStartDetectedMeeting, onStealthModeChanged } from "./lib/events";
 
+/** How long the overlay waits for a meeting it was asked to show (see below). */
+const MEETING_ARRIVAL_WAIT_MS = 2000;
+
 function App() {
   const currentView = useMeetingStore((s) => s.currentView);
   const settingsOpen = useMeetingStore((s) => s.settingsOpen);
@@ -134,10 +137,19 @@ function App() {
   // the meeting first; with no meeting running, show the launcher instead.
   useEffect(() => {
     if (windowLabel !== "overlay") return;
+    // Start Meeting asks for the overlay before this window has received the
+    // meeting (nexq:meeting_started, which shows the overlay itself). Showing
+    // the launcher back then would hide the overlay right after it came up,
+    // leaving no window on screen, so wait a moment for the meeting first.
+    let waitForMeeting: ReturnType<typeof setTimeout> | null = null;
     const show = () => {
       const store = useMeetingStore.getState();
       if (!store.activeMeeting) {
-        showLauncherWindow().catch(() => {});
+        if (waitForMeeting) clearTimeout(waitForMeeting);
+        waitForMeeting = setTimeout(() => {
+          waitForMeeting = null;
+          if (!useMeetingStore.getState().activeMeeting) showLauncherWindow().catch(() => {});
+        }, MEETING_ARRIVAL_WAIT_MS);
         return;
       }
       if (store.currentView !== "overlay" && store.currentView !== "settings") store.setCurrentView("overlay");
@@ -146,7 +158,10 @@ function App() {
     const unlisteners: Array<() => void> = [];
     listen(SHOW_MEETING_OVERLAY_EVENT, show).then((fn) => unlisteners.push(fn));
     listen("tray_show_overlay", show).then((fn) => unlisteners.push(fn));
-    return () => unlisteners.forEach((fn) => fn());
+    return () => {
+      if (waitForMeeting) clearTimeout(waitForMeeting);
+      unlisteners.forEach((fn) => fn());
+    };
   }, [windowLabel]);
 
   // LAUNCHER window: listen for nexq:meeting_ended from overlay, show self + reset state

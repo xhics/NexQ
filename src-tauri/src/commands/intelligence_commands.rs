@@ -25,6 +25,36 @@ use crate::state::AppState;
 /// say at once. The overlay shows the "⚡" line apart and doesn't read it aloud.
 const CUE_CARD_INSTRUCTION: &str = "Start your answer with one line that begins with '⚡ ' and lists 3 to 5 keywords or figures to mention, separated by ' · '. Then write one short opening sentence the user can say right away. Then the rest of the answer.";
 
+/// An answer read during the meeting, while the user speaks: short and to
+/// the point, whatever the saved action prompt says (saved prompts don't
+/// follow later default changes).
+const LIVE_BREVITY_INSTRUCTION: &str = "Keep the answer short and to the point, laid out as said below. No title, no introduction, no conclusion, and don't restate the question.";
+
+/// Layouts the user picks for live answers (the compact box's Points / Story).
+const POINTS_INSTRUCTION: &str = "Lay the answer out as 3 or 4 bullet points, each under 12 words, about 50 words in all: the direct answer first.";
+const STORY_INSTRUCTION: &str = "Lay the answer out as a short story told in the first person, in 3 or 4 spoken sentences: the situation, what the user did, the result (a figure if one is known), about 80 words. No bullet points.";
+const AUTO_STYLE_INSTRUCTION: &str = "Choose the layout by the question. A direct question (a fact, a definition, an opinion, a choice, how something works): 3 or 4 bullet points, each under 12 words, the direct answer first. A question asking to tell an experience or a time when, or to walk through a situation or a scenario (\"tell me about a time\", \"raconte\", \"parle-moi d'une fois\", \"décris une situation\", \"que ferais-tu si\"): a short first-person story in 3 or 4 spoken sentences (the situation, what the user did, the result), about 80 words, no bullet points.";
+
+/// Notes for the user's eyes beside the answer; the overlay splits them off
+/// at this line (NOTES_MARK in src/lib/answerNotes.ts).
+const NOTES_INSTRUCTION: &str = "After the answer, write a line with only ---NOTES--- on it, then 2 or 3 very short notes for the user's eyes only, not to say aloud: a figure, a name or a technical term worth mentioning, each on a line starting with '- ', 1 to 4 words, no sentence. Nothing after the notes.";
+
+/// `prompt`, with the brevity rule for the answers read live (Assist, Say),
+/// laid out as `style` says ("points", "story", else chosen by question),
+/// and notes after it.
+pub(crate) fn with_live_brevity(prompt: String, mode: &str, live: bool, style: Option<&str>) -> String {
+    if live && matches!(mode, "Assist" | "WhatToSay") {
+        let layout = match style {
+            Some("points") => POINTS_INSTRUCTION,
+            Some("story") => STORY_INSTRUCTION,
+            _ => AUTO_STYLE_INSTRUCTION,
+        };
+        format!("{prompt}\n\n{LIVE_BREVITY_INSTRUCTION}\n{layout}\n{NOTES_INSTRUCTION}")
+    } else {
+        prompt
+    }
+}
+
 pub(crate) fn compose_instructions(presets: &InstructionPresets, custom: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(tone) = &presets.tone {
@@ -42,7 +72,7 @@ pub(crate) fn compose_instructions(presets: &InstructionPresets, custom: &str) -
     }
     if let Some(length) = &presets.length {
         let text = match length.as_str() {
-            "brief" => "Brief responses.".to_string(),
+            "brief" => "Brief responses: two or three short lines.".to_string(),
             "standard" => "Standard length responses.".to_string(),
             "detailed" => "Detailed responses.".to_string(),
             other => format!("{} responses.", other),
@@ -732,6 +762,7 @@ pub async fn generate_assist(
     request_id: Option<String>,
     past_meeting_id: Option<String>,
     scope: Option<ResolvedScope>,
+    answer_style: Option<String>,
     app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -824,15 +855,22 @@ pub async fn generate_assist(
 
     // ── Route: warm Claude session, fallback provider, or stateless ──
     let (scope, epoch) = request_scope(&state, past_meeting_id.as_deref());
+    // A live answer (not one about a past meeting) is kept short.
+    let live = past_meeting_id.as_deref().map_or(true, str::is_empty);
     let mut route = request_route(&state, &mode, &scope);
 
     if let Route::ClaudeSession(key) = &route {
         // The action's own prompt (or the mode template) and presets travel in
         // the user message; the scenario prompt is the session's system prompt.
-        let action_prompt = action_cfg
-            .as_ref()
-            .map(|c| c.system_prompt.clone())
-            .unwrap_or_else(|| crate::intelligence::prompt_templates::get_system_prompt(&mode).to_string());
+        let action_prompt = with_live_brevity(
+            action_cfg
+                .as_ref()
+                .map(|c| c.system_prompt.clone())
+                .unwrap_or_else(|| crate::intelligence::prompt_templates::get_system_prompt(&mode).to_string()),
+            &mode,
+            live,
+            answer_style.as_deref(),
+        );
         let task_instructions = if include_instructions && !presets.is_empty() {
             format!("{}\n\n{}", action_prompt, presets)
         } else {
@@ -955,6 +993,8 @@ pub async fn generate_assist(
                 crate::intelligence::prompt_templates::get_system_prompt(&mode).to_string()
             })
         });
+
+    let base_system_prompt = with_live_brevity(base_system_prompt, &mode, live, answer_style.as_deref());
 
     // Append composed instructions (tone + format + length + custom text) to system prompt.
     // These are behavioral directives that belong in the system context, not as reference materials.
@@ -1313,6 +1353,20 @@ mod tests {
         assert_eq!(cap_document_text("  
 ", 10), None);
         assert_eq!(cap_document_text("short doc", 10).as_deref(), Some("short doc"));
+    }
+
+    #[test]
+    fn live_answers_are_kept_short() {
+        let p = with_live_brevity("Base.".to_string(), "Assist", true, None);
+        assert!(p.starts_with("Base.") && p.contains("short and to the point") && p.contains("Choose the layout"));
+        let points = with_live_brevity("Base.".to_string(), "WhatToSay", true, Some("points"));
+        assert!(points.contains("bullet points, each under 12 words") && !points.contains("story"));
+        let story = with_live_brevity("Base.".to_string(), "Assist", true, Some("story"));
+        assert!(story.contains("short story told in the first person") && story.contains("No bullet points"));
+        assert!(story.contains("---NOTES---"));
+        // Not for other actions, nor for questions about a past meeting.
+        assert_eq!(with_live_brevity("Base.".to_string(), "Recap", true, Some("story")), "Base.");
+        assert_eq!(with_live_brevity("Base.".to_string(), "Assist", false, None), "Base.");
         let capped = cap_document_text(&"é".repeat(25), 10).unwrap();
         assert!(capped.starts_with(&"é".repeat(10)));
         assert!(!capped.starts_with(&"é".repeat(11)));

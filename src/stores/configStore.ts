@@ -20,6 +20,9 @@ import type {
 } from "../lib/types";
 import { clampMinutes, DEFAULT_CONTEXT_SCOPE, SCOPE_KINDS } from "../lib/contextScope";
 
+/** How live answers are laid out (see `answerStyle`). */
+export type AnswerStyle = "auto" | "points" | "story";
+
 const DEFAULT_DEEPGRAM_CONFIG: DeepgramConfig = {
   model: "nova-3",
   smart_format: false,
@@ -280,6 +283,15 @@ interface ConfigState {
   readingSpeed: number;
   /** Read answers aloud while they are written. */
   speakAnswers: boolean;
+  /** Show an answer's notes (figures, names, terms) beside it in the compact box. */
+  showNotes: boolean;
+  /** A new meeting opens straight in the compact answer box. */
+  startCompact: boolean;
+  /**
+   * How live answers are laid out: "points" for a direct answer, "story" to
+   * tell an experience or a scenario, "auto" for the AI to choose by question.
+   */
+  answerStyle: AnswerStyle;
   /** Voice speed for answers read aloud (1 = normal). */
   speechRate: number;
 
@@ -393,6 +405,9 @@ interface ConfigState {
   setCompactOpacity: (opacity: number) => void;
   setReadingSpeed: (speed: number) => void;
   setSpeakAnswers: (on: boolean) => void;
+  setShowNotes: (on: boolean) => void;
+  setStartCompact: (on: boolean) => void;
+  setAnswerStyle: (style: AnswerStyle) => void;
   setSpeechRate: (rate: number) => void;
   setContextScope: (scope: ContextScopeSetting) => void;
   setContextScopeSticky: (sticky: boolean) => void;
@@ -477,9 +492,12 @@ export const useConfigStore = create<ConfigState>((set) => ({
   aiResponseHPad: 0,
   aiResponseAlign: "left" as const,
   overlayOpacity: 0.65,
-  compactOpacity: 0,
+  compactOpacity: 0.53,
   readingSpeed: 14,
   speakAnswers: false,
+  showNotes: true,
+  startCompact: true,
+  answerStyle: "auto" as AnswerStyle,
   speechRate: 1.15,
   contextScope: DEFAULT_CONTEXT_SCOPE,
   contextScopeSticky: true,
@@ -871,9 +889,21 @@ export const useConfigStore = create<ConfigState>((set) => ({
     set({ readingSpeed: speed });
     persistValue("readingSpeed", speed);
   },
+  setShowNotes: (on) => {
+    set({ showNotes: on });
+    persistValue("showNotes", on);
+  },
   setSpeakAnswers: (on) => {
     set({ speakAnswers: on });
     persistValue("speakAnswers", on);
+  },
+  setAnswerStyle: (style) => {
+    set({ answerStyle: style });
+    persistValue("answerStyle", style);
+  },
+  setStartCompact: (on) => {
+    set({ startCompact: on });
+    persistValue("startCompact", on);
   },
   setSpeechRate: (rate) => {
     set({ speechRate: rate });
@@ -1018,6 +1048,9 @@ export const useConfigStore = create<ConfigState>((set) => ({
       const compactOpacity = await store.get<number>("compactOpacity");
       const readingSpeed = await store.get<number>("readingSpeed");
       const speakAnswers = await store.get<boolean>("speakAnswers");
+      const showNotes = await store.get<boolean>("showNotes");
+      const startCompact = await store.get<boolean>("startCompact");
+      const answerStyle = await store.get<AnswerStyle>("answerStyle");
       const speechRate = await store.get<number>("speechRate");
       const contextScope = await store.get<ContextScopeSetting>("contextScope");
       const contextScopeSticky = await store.get<boolean>("contextScopeSticky");
@@ -1198,9 +1231,12 @@ export const useConfigStore = create<ConfigState>((set) => ({
         aiResponseHPad: aiResponseHPad ?? 0,
         aiResponseAlign: (aiResponseAlign as "left" | "center" | "right") ?? "left",
         overlayOpacity: overlayOpacity ?? 0.65,
-        compactOpacity: compactOpacity ?? 0,
+        compactOpacity: compactOpacity ?? 0.53,
         readingSpeed: readingSpeed ?? 14,
         speakAnswers: speakAnswers ?? false,
+        showNotes: showNotes ?? true,
+        startCompact: startCompact ?? true,
+        answerStyle: answerStyle === "points" || answerStyle === "story" ? answerStyle : "auto",
         speechRate: speechRate ?? 1.15,
         contextScope: normalizeContextScope(contextScope),
         contextScopeSticky: contextScopeSticky ?? true,

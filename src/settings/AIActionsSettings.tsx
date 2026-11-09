@@ -380,7 +380,7 @@ export function AIActionsSettings() {
     }
     if (p.length) {
       const lm: Record<string, string> = {
-        brief: "Brief responses.", standard: "Standard length responses.",
+        brief: "Brief responses: two or three short lines.", standard: "Standard length responses.",
         detailed: "Detailed responses.",
       };
       parts.push(lm[p.length] || `${p.length} responses.`);
@@ -628,6 +628,30 @@ export function AIActionsSettings() {
                           </button>
                         ))}
                       </div>
+                    </div>
+                  )}
+                  {configs.globalDefaults.autoTrigger && (
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <span className="text-xs text-muted-foreground/70" title="As soon as the question is clear, write its opening; once they finish, add the rest after it">
+                        Start while they ask
+                      </span>
+                      <Toggle
+                        checked={configs.globalDefaults.autoAnswerDraft ?? true}
+                        onChange={(v) => updateGlobalDefaults({ autoAnswerDraft: v })}
+                        label="Toggle starting the answer while they ask"
+                      />
+                    </div>
+                  )}
+                  {configs.globalDefaults.autoTrigger && configs.globalDefaults.autoAnswerTrigger !== "turn" && (
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <span className="text-xs text-muted-foreground/70" title="When what they said doesn't look like a question (no question word), the AI judges: it answers if something was asked of you, else the answer on screen stays">
+                        Let the AI judge unclear turns
+                      </span>
+                      <Toggle
+                        checked={configs.globalDefaults.autoAnswerUnsure ?? true}
+                        onChange={(v) => updateGlobalDefaults({ autoAnswerUnsure: v })}
+                        label="Toggle letting the AI judge unclear turns"
+                      />
                     </div>
                   )}
                   {configs.globalDefaults.autoTrigger && (

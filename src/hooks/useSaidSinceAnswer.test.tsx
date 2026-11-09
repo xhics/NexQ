@@ -14,7 +14,7 @@ describe("what you already said", () => {
     expect(covered("Capgemini", new Set())).toBe(false);
   });
 
-  it("strikes out the keywords and list items said, not the rest", () => {
+  it("turns the keywords and list items said yellow, without striking them out", () => {
     render(
       <AnswerMarkdown
         content={"⚡ Capgemini · −30 % délais\n- Automatisé les processus de facturation chez Capgemini\n- Réduit les délais de paiement"}
@@ -22,10 +22,15 @@ describe("what you already said", () => {
         said={said}
       />,
     );
-    expect(screen.getByText("Capgemini").className).toContain("line-through");
-    expect(screen.getByText("−30 % délais").className).not.toContain("line-through");
-    expect(screen.getByText(/Automatisé les processus/).closest("li")?.className).toContain("line-through");
-    expect(screen.getByText(/Réduit les délais/).closest("li")?.className ?? "").not.toContain("line-through");
+    const keyword = screen.getByText("Capgemini");
+    expect(keyword).toHaveAttribute("data-said", "1");
+    expect(keyword.className).toContain("yellow");
+    expect(screen.getByText("−30 % délais")).not.toHaveAttribute("data-said");
+    const item = screen.getByText(/Automatisé les processus/).closest("li");
+    expect(item).toHaveAttribute("data-said", "1");
+    expect(item?.className).toContain("text-yellow-300");
+    expect(screen.getByText(/Réduit les délais/).closest("li")).not.toHaveAttribute("data-said");
+    expect(document.body.innerHTML).not.toContain("line-through");
   });
 });
 

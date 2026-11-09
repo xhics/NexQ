@@ -13,6 +13,8 @@ export function GeneralSettings() {
   const setAutoSummary = useConfigStore((s) => s.setAutoSummary);
   const startOnLogin = useConfigStore((s) => s.startOnLogin);
   const setStartOnLogin = useConfigStore((s) => s.setStartOnLogin);
+  const startCompact = useConfigStore((s) => s.startCompact ?? true);
+  const setStartCompact = useConfigStore((s) => s.setStartCompact);
   const dataDirectory = useConfigStore((s) => s.dataDirectory);
   const overlayOpacity = useConfigStore((s) => s.overlayOpacity);
   const setOverlayOpacity = useConfigStore((s) => s.setOverlayOpacity);
@@ -101,6 +103,35 @@ export function GeneralSettings() {
             <span
               className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all duration-200 ${
                 autoSummary ? "translate-x-5 scale-[1.05]" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="h-px bg-border/20" />
+
+        {/* Start meetings in the compact box */}
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium text-foreground">
+              Start in the compact box
+            </label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Start Meeting opens the answer alone in the small box at the top of the screen. Double-click it for the full overlay
+            </p>
+          </div>
+          <button
+            onClick={() => setStartCompact(!startCompact)}
+            role="switch"
+            aria-checked={startCompact}
+            aria-label="Toggle start in the compact box"
+            className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-all duration-200 ${
+              startCompact ? "bg-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all duration-200 ${
+                startCompact ? "translate-x-5 scale-[1.05]" : "translate-x-0"
               }`}
             />
           </button>

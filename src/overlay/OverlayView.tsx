@@ -59,6 +59,7 @@ import { usePracticeStore } from "../stores/practiceStore";
 import { toggleStealthMode } from "../hooks/useGlobalShortcut";
 import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, formatShortcut } from "../lib/shortcutLabel";
 import { formatDuration } from "../lib/utils";
+import { END_CONFIRM_MS, onEndArmed } from "../lib/endConfirm";
 
 // ════════════════════════════════════════════════════════════════
 export function OverlayView() {
@@ -108,7 +109,8 @@ export function OverlayView() {
   }, [enterCompact, exitCompact]);
 
   // The overlay window stays mounted between meetings, so reset its local UI
-  // state whenever a new meeting starts (panels, layout, ask input).
+  // state whenever a new meeting starts (panels, layout, ask input). A new
+  // meeting opens in the compact box when that is set (Settings > General).
   const activeMeetingId = activeMeeting?.id ?? "";
   useEffect(() => {
     setAskInputVisible(false);
@@ -116,9 +118,11 @@ export function OverlayView() {
     setStatsOpen(false);
     setBookmarksOpen(false);
     setLayoutMode("split");
-    if (compactRef.current) exitCompact();
     if (usePracticeStore.getState().active) stopPractice();
-  }, [activeMeetingId, exitCompact]);
+    const wantCompact = !!activeMeetingId && (useConfigStore.getState().startCompact ?? true);
+    if (wantCompact && !compactRef.current) enterCompact();
+    else if (!wantCompact && compactRef.current) exitCompact();
+  }, [activeMeetingId, enterCompact, exitCompact]);
   const cycleLayout = () => setLayoutMode((m) => m === "split" ? "ai" : m === "ai" ? "transcript" : "split");
   const toggleLog = useCallLogStore((s) => s.toggleOpen);
   const logOpen = useCallLogStore((s) => s.isOpen);
@@ -146,7 +150,7 @@ export function OverlayView() {
   const batchProgress = useTranslationStore((s) => s.batchProgress);
   const isBatchTranslating = batchProgress !== null;
 
-  // Bookmark hotkey (Ctrl+B) — also returns addBookmarkAtNow for shortcut hook
+  // Adds a bookmark now (the B key and the bookmark toolbar)
   const addBookmarkAtNow = useBookmarkHotkey();
 
   // Consolidated keyboard shortcuts for live meeting
@@ -176,10 +180,33 @@ export function OverlayView() {
   // Translation event subscriptions + auto-translate trigger
   useTranslation();
 
+  // Ending takes two clicks (End, then Confirm end) or Ctrl+M twice, so a
+  // stray click never cuts an interview short.
+  const [endArmed, setEndArmed] = useState(false);
+  const endArmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armEnd = useCallback(() => {
+    setEndArmed(true);
+    if (endArmTimer.current) clearTimeout(endArmTimer.current);
+    endArmTimer.current = setTimeout(() => setEndArmed(false), END_CONFIRM_MS);
+  }, []);
+  useEffect(() => () => { if (endArmTimer.current) clearTimeout(endArmTimer.current); }, []);
+  // The first Ctrl+M (held by the launcher) shows here, the window on screen.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let gone = false;
+    onEndArmed(() => {
+      armEnd();
+      showToast(`Press ${formatShortcut("CmdOrCtrl+M")} again to end the meeting`, "warning");
+    }).then((u) => { if (gone) u(); else unlisten = u; }).catch(() => {});
+    return () => { gone = true; unlisten?.(); };
+  }, [armEnd]);
+
   const handleEndMeeting = useCallback(async () => {
+    if (!endArmed) { armEnd(); return; }
+    setEndArmed(false);
     try { await endMeetingFlow(); showToast("Meeting ended", "info"); }
     catch (err) { showToast(err instanceof Error ? err.message : "Couldn't end meeting", "error"); }
-  }, [endMeetingFlow]);
+  }, [endMeetingFlow, endArmed, armEnd]);
 
   const handleTranslateAll = useCallback(async () => {
     const meetingId = activeMeeting?.id;
@@ -263,7 +290,7 @@ export function OverlayView() {
             }`}
             aria-label={mutedYou ? "Unmute mic (You)" : "Mute mic (You)"}
             aria-pressed={mutedYou}
-            title={mutedYou ? "Unmute mic (You)" : "Mute mic (You)"}
+            title={`${mutedYou ? "Unmute mic (You)" : "Mute mic (You)"} (${formatShortcut("CmdOrCtrl+Shift+M")})`}
           >
             {mutedYou ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
           </button>
@@ -356,11 +383,16 @@ export function OverlayView() {
 
           <button
             onClick={handleEndMeeting}
-            className="ml-1.5 flex items-center gap-1.5 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-1.5 text-xs font-semibold text-destructive transition-all duration-150 hover:bg-destructive/20 hover:border-destructive/30 hover:shadow-sm hover:shadow-destructive/10 cursor-pointer"
-            aria-label="End meeting"
+            className={`ml-1.5 flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all duration-150 cursor-pointer ${
+              endArmed
+                ? "bg-destructive border-destructive text-white hover:bg-destructive/90"
+                : "bg-destructive/10 border-destructive/20 text-destructive hover:bg-destructive/20 hover:border-destructive/30 hover:shadow-sm hover:shadow-destructive/10"
+            }`}
+            aria-label={endArmed ? "Confirm end meeting" : "End meeting"}
+            title={endArmed ? "Click again to end the meeting" : "End the meeting (asks to confirm)"}
           >
             <Square className="h-3 w-3 fill-current" aria-hidden="true" />
-            End
+            {endArmed ? "Confirm end" : "End"}
           </button>
         </div>
       </div>
@@ -467,6 +499,7 @@ function HeaderBtn({ icon, active, onClick, tooltip }: { icon: React.ReactNode; 
       }`}
       aria-label={tooltip}
       aria-pressed={active}
+      title={tooltip}
     >
       {icon}
     </button>

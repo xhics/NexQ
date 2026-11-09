@@ -81,6 +81,8 @@ describe("generateAssist", () => {
       customQuestion: "Find moments",
       transcriptSegments: JSON.stringify(segments),
       requestId: "req-42",
+      // A live answer carries the layout picked in the compact box.
+      answerStyle: "auto",
     });
   });
 

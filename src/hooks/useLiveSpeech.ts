@@ -5,6 +5,8 @@ import { logToFile } from "../lib/logger";
 import { useQuestionStore } from "../stores/questionStore";
 import { useStoryStore } from "../stores/storyStore";
 import { findStory } from "../stores/storyMeaning";
+import { EssentialReader, essentialSpeech } from "../lib/essentialSpeech";
+import { withoutNotes } from "../lib/answerNotes";
 
 /**
  * After the voice stops, its echo can still be in the transcript this long:
@@ -107,8 +109,9 @@ function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
 }
 
 /**
- * Reads the answer aloud while it is written: each sentence as soon as it is
- * finished, not the whole answer at the end. A new answer stops the old one.
+ * Reads the essentials of the answer aloud while it is written (see
+ * essentialSpeech: the opening sentence and the gist of each point, not
+ * every word), each as soon as it is finished. A new answer stops the old one.
  * A prepared story that matches the question is read at once instead, and the
  * AI's answer to that question isn't read over it.
  */
@@ -119,9 +122,13 @@ export function useLiveSpeech(): void {
     if (!enabled || typeof speechSynthesis === "undefined") return;
     // The voice list loads late in WebView2.
     speechSynthesis.getVoices();
-    // An answer already on screen isn't read back: only what comes next.
-    let lastContent = useStreamStore.getState().currentContent ?? "";
-    let spoken = lastContent.length;
+    // Turning it on reads the answer on screen from the start, so you hear
+    // at once that the voice reaches your headset; then what comes next.
+    let lastContent = "";
+    let spoken = 0;
+    // What of the answer is worth hearing; a new one per answer.
+    let reader = new EssentialReader();
+    let voiceChecked = false;
 
     const say = (chunk: string) => {
       const words = speakableText(chunk);
@@ -134,12 +141,30 @@ export function useLiveSpeech(): void {
       utterance.rate = speechRate ?? 1.15;
       const voice = pickVoice(lang);
       if (voice) utterance.voice = voice;
-      utterance.onstart = () => { speaking = true; };
-      utterance.onend = utterance.onerror = () => {
+      if (!voiceChecked) {
+        voiceChecked = true;
+        logToFile(
+          voice ? "info" : "warn",
+          "speech",
+          voice
+            ? `Voice: ${voice.name} (${voice.lang}), ${speechSynthesis.getVoices().length} installed`
+            : `No ${lang} voice among ${speechSynthesis.getVoices().length} installed: the system default reads`,
+        );
+      }
+      const finished = () => {
         if (!speechSynthesis.speaking && !speechSynthesis.pending) {
           speaking = false;
           speakingUntil = Date.now() + ECHO_TAIL_MS;
         }
+      };
+      utterance.onstart = () => { speaking = true; };
+      utterance.onend = finished;
+      utterance.onerror = (e) => {
+        // "interrupted" / "canceled" are a new answer stopping the old one.
+        if (e.error !== "interrupted" && e.error !== "canceled") {
+          logToFile("warn", "speech", `The voice failed: ${e.error}`);
+        }
+        finished();
       };
       speaking = true;
       speechSynthesis.speak(utterance);
@@ -161,7 +186,7 @@ export function useLiveSpeech(): void {
       if (story.id === storyId) return; // the same line grew: already being read
       storyId = story.id;
       stopSpeaking();
-      say(story.answer);
+      say(essentialSpeech(story.answer));
       logToFile("info", "speech", "Reading a prepared story");
     };
     let lastQuestion = useQuestionStore.getState().questions[0]?.text ?? "";
@@ -173,7 +198,8 @@ export function useLiveSpeech(): void {
     });
 
     const onChange = (state: ReturnType<typeof useStreamStore.getState>) => {
-      const content = state.currentContent ?? "";
+      // The notes are for your eyes: never read out.
+      const content = withoutNotes(state.currentContent ?? "");
       // The prepared story is read for this question: its AI answer isn't.
       if (storyQuestion !== null && storyQuestion === lastQuestion) {
         lastContent = content;
@@ -185,18 +211,21 @@ export function useLiveSpeech(): void {
       if (content.length < lastContent.length || !content.startsWith(lastContent.slice(0, 40))) {
         if (spoken > 0 || speaking) stopSpeaking();
         spoken = 0;
+        reader = new EssentialReader();
       }
       lastContent = content;
       const done = !state.isStreaming && state.phase === "idle";
       const end = done ? content.length : lastSentenceEnd(content, spoken);
       if (end > spoken) {
-        say(content.slice(spoken, end));
+        say(reader.take(content.slice(spoken, end)));
         spoken = end;
       }
     };
 
     const unsubscribe = useStreamStore.subscribe(onChange);
     logToFile("info", "speech", "Reading answers aloud");
+    // The answer already on screen, now.
+    onChange(useStreamStore.getState());
     return () => {
       unsubscribe();
       unsubscribeQuestions();

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useStreamStore, RESPONSE_HISTORY_CAP } from "./streamStore";
+import { useStreamStore, RESPONSE_HISTORY_CAP, REDO_MARK, NOTHING_MARK, answeredNothing } from "./streamStore";
 
 const T0 = 1_700_000_000_000;
 const s = () => useStreamStore.getState();
@@ -158,5 +158,67 @@ describe("streamStore", () => {
       currentContent: "",
       currentId: null,
     });
+  });
+});
+
+describe("a continuation", () => {
+  beforeEach(() => s().resetForMeeting());
+  it("stopped before its first word, leaves the answer it was to continue on screen", () => {
+    answer("Assist", "Je commencerais par les logs.");
+    const kept = s().currentId;
+    const id = crypto.randomUUID();
+    s().markContinuation(id);
+    s().setPending("Assist", id);
+    s().clearPending(id);
+    expect(s().currentContent).toBe("Je commencerais par les logs.");
+    expect(s().currentId).toBe(kept);
+  });
+
+  it("goes on after the answer on screen, or replaces it when it starts with the redo mark", () => {
+    answer("Assist", "Je commencerais par les logs.");
+    const goOn = crypto.randomUUID();
+    s().markContinuation(goOn);
+    answer("Assist", "Puis le dernier commit stable.", goOn);
+    expect(s().currentContent).toBe("Je commencerais par les logs.\n\nPuis le dernier commit stable.");
+    expect(s().responseHistory).toHaveLength(1);
+
+    const redo = crypto.randomUUID();
+    s().markContinuation(redo);
+    answer("Assist", `${REDO_MARK}\nJe parlerais de mon rôle de lead.`, redo);
+    // Misread: the old start goes, the whole answer is new.
+    expect(s().currentContent).toBe("Je parlerais de mon rôle de lead.");
+    expect(s().responseHistory).toHaveLength(1);
+    expect(s().responseHistory[0].content).toBe("Je parlerais de mon rôle de lead.");
+  });
+});
+
+describe("a tentative answer (the AI judges whether something was asked)", () => {
+  beforeEach(() => s().resetForMeeting());
+
+  it("leaves the answer on screen when it finds nothing was asked", () => {
+    answer("Assist", "Je commencerais par les logs.");
+    const kept = s().currentId;
+    const id = crypto.randomUUID();
+    s().markTentative(id);
+    s().setPending("Assist", id);
+    s().startStream("Assist" as never, "m", "p", { requestId: id });
+    expect(s().currentContent).toBe("Je commencerais par les logs.");
+    s().appendToken(NOTHING_MARK);
+    expect(s().currentContent).toBe("Je commencerais par les logs.");
+    s().endStream(5);
+    expect(s().currentContent).toBe("Je commencerais par les logs.");
+    expect(s().currentId).toBe(kept);
+    expect(s().responseHistory).toHaveLength(1);
+    expect(answeredNothing(id)).toBe(true);
+  });
+
+  it("is a new answer when something was asked", () => {
+    answer("Assist", "Je commencerais par les logs.");
+    const id = crypto.randomUUID();
+    s().markTentative(id);
+    answer("Assist", "Je donnerais deux chiffres.", id);
+    expect(s().currentContent).toBe("Je donnerais deux chiffres.");
+    expect(s().responseHistory).toHaveLength(2);
+    expect(answeredNothing(id)).toBe(false);
   });
 });

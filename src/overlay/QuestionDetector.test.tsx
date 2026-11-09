@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Transcript event handlers the component subscribes, so a test can send lines.
 const listeners = vi.hoisted(() => ({
@@ -23,7 +23,7 @@ vi.mock("../lib/ipc", async (importOriginal) => ({
   cancelGeneration: vi.fn(() => Promise.resolve()),
 }));
 
-import { AUTO_TRIGGER_DELAY_MS, QUICK_TRIGGER_DELAY_MS, quietWait, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer, isClosingQuestion } from "./QuestionDetector";
+import { AUTO_TRIGGER_DELAY_MS, QUICK_TRIGGER_DELAY_MS, quietWait, QuestionDetector, QuestionPanel, lastSentence, looksLikeQuestion, whatToAnswer, isClosingQuestion, draftRequest, continuationRequest, unsureRequest, followOnRequest, FOLLOW_ON_MS } from "./QuestionDetector";
 import { runUserAction } from "../lib/userAction";
 import { cancelGeneration } from "../lib/ipc";
 import { useStreamStore } from "../stores/streamStore";
@@ -43,6 +43,10 @@ function setDefaults(defaults: Partial<GlobalDefaults>) {
 }
 
 const setAutoTrigger = (on: boolean) => setDefaults({ autoTrigger: on });
+
+// Most tests are about the answer to the finished question: no drafts there
+// (the "draft" tests turn them on).
+beforeEach(() => setDefaults({ autoAnswerDraft: false, autoAnswerUnsure: false }));
 
 afterEach(() => {
   cleanup();
@@ -544,6 +548,31 @@ describe("QuestionDetector", () => {
     }
   });
 
+  it("finds French questions whose asking word comes last, an acknowledgement glued after or not", () => {
+    for (const q of [
+      "Bien. Et si les tests montrent que le système tient, mais que les coûts dépassent le budget, tu fais quoi",
+      "mais que les coûts dépassent le budget, tu fais quoi Oui,",
+      "Et la dette technique, tu la gères comment",
+      "Ce microservice, ça sert à quoi",
+      "Le circuit breaker, c'est quoi",
+      "Vous partiriez quand",
+      "Et côté résultats mesurables, tu peux être plus précis",
+      "Prends le temps de conclure avec un ou deux résultats chiffrés et",
+      "D'accord. Tu as déjà géré une équipe à distance",
+      "Précise les chiffres",
+    ]) {
+      expect(whatToAnswer(q, false), q).not.toBeNull();
+    }
+    for (const s of [
+      "Je ne sais pas trop pourquoi",
+      "Je t'explique comment",
+      "Voilà comment",
+      "On a fait un tableau de bord pour les coûts",
+    ]) {
+      expect(looksLikeQuestion(s), s).toBe(false);
+    }
+  });
+
   it("keeps a short request after the question with it", () => {
     expect(lastSentence("Comment tu gères les pannes d'API. Un exemple concret s'il te plaît.")).toBe(
       "Comment tu gères les pannes d'API. Un exemple concret s'il te plaît.",
@@ -573,5 +602,155 @@ describe("QuestionDetector", () => {
 
     act(() => useTranscriptStore.setState({ segments: [seg("So here's the situation. What would you do?")] }));
     expect(screen.getByText(/What would you do\?/)).toBeTruthy();
+  });
+});
+
+describe("a draft while the question is asked", () => {
+  /** Each answer streams `text` into the stream store, as the backend would. */
+  const answersWith = (...texts: string[]) => {
+    let n = 0;
+    vi.mocked(runUserAction).mockImplementation((mode, _q, opts) => {
+      const id = opts?.requestId ?? crypto.randomUUID();
+      const s = useStreamStore.getState();
+      s.setPending(mode, id);
+      s.startStream(mode as never, "m", "p", { requestId: id });
+      s.appendToken(texts[n++] ?? "");
+      s.endStream(5);
+      return Promise.resolve();
+    });
+  };
+
+  it("writes the opening as soon as the question is clear, then adds the rest after it", async () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerDraft: true });
+    answersWith("J'ai mené la migration vers le cloud.", "Résultat : 30 % de coûts en moins.");
+    const asked = "Parle-moi d'un projet que tu as mené";
+    useTranscriptStore.setState({ segments: [seg(asked, false)] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    // Still being asked: only its opening.
+    expect(vi.mocked(runUserAction).mock.calls[0][1]).toBe(draftRequest(asked));
+
+    const full = "Parle-moi d'un projet que tu as mené avec une équipe";
+    act(() => useTranscriptStore.setState({ segments: [seg(full)] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    expect(runUserAction).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(
+      continuationRequest(full, "J'ai mené la migration vers le cloud."),
+    );
+    // The rest comes after the opening, and History keeps the whole as one answer.
+    const stream = useStreamStore.getState();
+    expect(stream.currentContent).toBe("J'ai mené la migration vers le cloud.\n\nRésultat : 30 % de coûts en moins.");
+    expect(stream.responseHistory).toHaveLength(1);
+  });
+
+  it("goes on from the answer on screen when the question grows, instead of erasing it", async () => {
+    vi.useFakeTimers();
+    setAutoTrigger(true);
+    answersWith("Je commencerais par lire les logs.", "Puis je reviendrais au dernier commit stable.");
+    useTranscriptStore.setState({ segments: [seg("Que ferais-tu en premier")] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    expect(runUserAction).toHaveBeenCalledTimes(1);
+
+    const full = "Que ferais-tu en premier si la mise en production cassait ?";
+    act(() => useTranscriptStore.setState({ segments: [seg(full)] }));
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(QUICK_TRIGGER_DELAY_MS + 10); });
+    await settle();
+    expect(runUserAction).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(continuationRequest(full, "Je commencerais par lire les logs."));
+    const stream = useStreamStore.getState();
+    expect(stream.currentContent).toBe("Je commencerais par lire les logs.\n\nPuis je reviendrais au dernier commit stable.");
+    expect(stream.responseHistory).toHaveLength(1);
+  });
+
+  it("doesn't draft a question of a few words", async () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerDraft: true });
+    useTranscriptStore.setState({ segments: [seg("Parle-moi de toi", false)] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(runUserAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("a turn the rules don't see as a question", () => {
+  /** Each answer streams `text` into the stream store, as the backend would. */
+  const answersWith = (...texts: string[]) => {
+    let n = 0;
+    vi.mocked(runUserAction).mockImplementation((mode, _q, opts) => {
+      const id = opts?.requestId ?? crypto.randomUUID();
+      const s = useStreamStore.getState();
+      s.setPending(mode, id);
+      s.startStream(mode as never, "m", "p", { requestId: id });
+      s.appendToken(texts[n++] ?? "");
+      s.endStream(5);
+      return Promise.resolve();
+    });
+  };
+
+  it("right after an answer, goes on from it: nothing new keeps it, more is added after it", async () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerUnsure: true });
+    answersWith("Je commencerais par les logs.", "∅", "Puis je donnerais deux chiffres.");
+    useTranscriptStore.setState({ segments: [seg("Comment tu commencerais")] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    expect(useStreamStore.getState().currentContent).toBe("Je commencerais par les logs.");
+
+    const feedback = "Nickel, c'est net, concret, orienté résultat, merci.";
+    act(() => useTranscriptStore.setState({ segments: [seg("Comment tu commencerais"), { ...seg(feedback), id: "them_2" }] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    await settle();
+    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(followOnRequest(feedback, "Je commencerais par les logs."));
+    // Nothing new: the answer stays as it was, and the line is no card to click.
+    expect(useStreamStore.getState().currentContent).toBe("Je commencerais par les logs.");
+    expect(useStreamStore.getState().responseHistory).toHaveLength(1);
+    expect(useQuestionStore.getState().questions.some((q) => q.segmentId === "them_2")).toBe(false);
+
+    const more = "Et avec des résultats chiffrés si possible";
+    act(() => useTranscriptStore.setState({ segments: [...useTranscriptStore.getState().segments, { ...seg(more), id: "them_3" }] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    await settle();
+    // Added after it, not rewritten.
+    expect(useStreamStore.getState().currentContent).toBe("Je commencerais par les logs.\n\nPuis je donnerais deux chiffres.");
+    expect(useStreamStore.getState().responseHistory).toHaveLength(1);
+  });
+
+  it("later on, is judged by the AI on its own: an answer only if something was asked", async () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerUnsure: true });
+    answersWith("Je commencerais par les logs.", "∅");
+    useTranscriptStore.setState({ segments: [seg("Comment tu commencerais")] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(FOLLOW_ON_MS); });
+
+    const feedback = "Nickel, c'est net, concret, orienté résultat, merci.";
+    act(() => useTranscriptStore.setState({ segments: [seg("Comment tu commencerais"), { ...seg(feedback), id: "them_2" }] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    await settle();
+    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(unsureRequest(feedback));
+    expect(useStreamStore.getState().currentContent).toBe("Je commencerais par les logs.");
+  });
+});
+
+describe("acknowledgements", () => {
+  it("an answer on screen stays when \"oui\" or \"d'accord\" is glued to its question", async () => {
+    vi.useFakeTimers();
+    setAutoTrigger(true);
+    useTranscriptStore.setState({ segments: [seg("Parle-moi d'un échec")] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS); });
+    expect(runUserAction).toHaveBeenCalledTimes(1);
+    act(() => useTranscriptStore.setState({ segments: [seg("Parle-moi d'un échec oui d'accord")] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS * 2); });
+    expect(runUserAction).toHaveBeenCalledTimes(1);
+    expect(cancelGeneration).not.toHaveBeenCalled();
+  });
+
+  it("\"Oui, d'accord, très bien\" is no turn to answer", () => {
+    expect(whatToAnswer("Oui, d'accord, très bien, parfait", true)).toBeNull();
   });
 });

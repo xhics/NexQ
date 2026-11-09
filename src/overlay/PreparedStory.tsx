@@ -3,7 +3,7 @@ import { BookOpen, X } from "lucide-react";
 import { useQuestionStore } from "../stores/questionStore";
 import { matchStory, useStoryStore, type StarStory } from "../stores/storyStore";
 import { matchStoryByMeaning } from "../stores/storyMeaning";
-import { CueLine } from "./CueLine";
+import { CueLine, SAID_CLASS } from "./CueLine";
 import { covered } from "../hooks/useSaidSinceAnswer";
 
 /**
@@ -63,7 +63,7 @@ export function PreparedStory({ story, fontSize, onHide, said }: { story: StarSt
       {story.keywords.length > 0 && <CueLine words={story.keywords} fontSize={fontSize + 1} said={said} />}
       <p className="whitespace-pre-line" style={{ fontSize: `${fontSize}px`, lineHeight: 1.45 }}>
         {sentences.map((part, i) => (
-          <span key={i} className={said && covered(part, said) ? "line-through opacity-40" : undefined}>{part}</span>
+          <span key={i} {...(said && covered(part, said) ? { className: SAID_CLASS, "data-said": "1" } : {})}>{part}</span>
         ))}
       </p>
     </div>

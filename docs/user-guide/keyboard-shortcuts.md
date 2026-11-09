@@ -14,9 +14,8 @@ These shortcuts are registered system-wide and work regardless of which applicat
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| `Ctrl+M` | Start / End Meeting | Starts a new meeting if none is active; ends the current meeting if one is running |
-| `Ctrl+B` | Toggle Overlay | Switches between the launcher (dashboard) and the overlay (meeting) window. Only works when a meeting is active |
-| `Ctrl+,` | Open / Close Settings | Toggles the settings panel |
+| `Ctrl+M` | Start / End Meeting | Starts a new meeting if none is active. During a meeting, the first press asks "Press Ctrl+M again to end the meeting"; a second press within 3 seconds ends it, so a stray Ctrl+M in another app never cuts an interview short |
+| `Ctrl+B` | Toggle Overlay | Switches between the launcher (dashboard) and the overlay (meeting) window. Held only during a meeting: the rest of the time `Ctrl+B` stays Bold in your other apps |
 | `Ctrl+Shift+H` | Hide from screen share | Turns stealth mode on or off. Change it in Settings > General |
 | `Ctrl+Shift+Space` | Assist from any app | During a meeting, generates AI Assist without switching to NexQ. Stops an automatic answer that's running. Change it in Settings > General |
 | `Ctrl+Alt+P` | Pause / resume Auto-Answer | During a meeting, from any app. Paused, questions still show as cards to click; also stops a reading in progress |
@@ -29,12 +28,21 @@ These shortcuts work when a meeting is active and the NexQ window (launcher or o
 
 | Shortcut | Action | AI Mode |
 |----------|--------|---------|
+| `Ctrl+,` | Open / Close Settings | Works in any NexQ window, meeting or not; other apps keep their own `Ctrl+,` |
 | `Space` | Generate AI Assist | Assist -- analyzes conversation and provides contextual help. Stops an automatic answer that's running |
 | `1` | What to Say | Suggests what you should say next based on the conversation |
 | `2` | Shorten | Condenses the recent discussion into a brief summary |
 | `3` | Follow-Up | Generates follow-up questions or discussion points |
 | `4` | Recap | Provides a recap of the conversation so far |
 | `5` | Ask Question | Opens the free-form question input for custom AI queries |
+
+| `Ctrl+Shift+M` | Mute / unmute your mic | -- |
+| `B` | Add a bookmark | -- |
+| `S` | Speaker stats | -- |
+| `K` | Bookmarks panel | -- |
+| `Esc` | Close the panels | -- |
+
+The **End** button in the overlay asks too: click it, then **Confirm end** within 3 seconds.
 
 > **Note:** The number keys (`1`--`5`) work with both the main keyboard and the numpad. They only trigger when no modifier keys (Ctrl, Alt, Meta) are held.
 

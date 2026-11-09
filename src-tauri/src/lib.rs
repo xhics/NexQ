@@ -604,6 +604,7 @@ pub fn run() {
             // == COMMANDS: stealth ==
             stealth_commands::set_stealth_mode,
             stealth_commands::get_stealth_support,
+            stealth_commands::set_window_blur,
             log_commands::get_log_info,
             log_commands::set_verbose_logging,
             log_commands::open_log_folder,

@@ -84,16 +84,26 @@ Detected questions appear as cards in the overlay. Click the card you need to ge
 
 For the fastest automatic answers, transcribe the interviewer with Cartesia or Deepgram Flux. Both tell NexQ when the interviewer has finished, so the answer starts right away instead of after 1.5 seconds of quiet (0.9 seconds after a question mark). If the interviewer keeps going after a pause, NexQ drops the answer it started and answers the complete question. Press `Space`, or click a question or an action, at any time to get your own answer instead.
 
+**What they add goes on from the answer**: for 30 seconds after an automatic answer, while you haven't started saying it, what the interviewer adds (the rest of a question the transcriber split in two lines, a detail, feedback) doesn't replace the answer. Nothing new leaves it as it is; more is added after it; it is rewritten only if they clearly asked something else.
+
+**Let the AI judge unclear turns** (on by default, Settings > AI Actions > Auto-Answer, when answering questions): when what the interviewer said doesn't look like a question by its words ("Et côté résultats, tu peux être plus précis", "Prenons un cas concret"), the AI is asked anyway. It answers if something was asked of you; if not (feedback such as "Nickel, c'est net, merci"), the answer on screen stays as it was and the line leaves the question cards. Questions with question words are still answered at once, without that step.
+
+**Start while they ask** (on by default, Settings > AI Actions > Auto-Answer): as soon as the question is clear (six words or more that ask something), NexQ writes the opening of the answer, keywords and one or two sentences, while the interviewer is still talking. Once they finish, the rest is added after that opening instead of replacing it, so what you are reading stays in place. The same goes when the interviewer adds to the question after an answer has started: the answer stops but stays on screen, and the rest for the whole question is added after it. Only if the start misread the question does the AI write the whole answer anew in its place.
+
+A "oui", "d'accord" or "très bien" from the interviewer, on its own or glued to their question, never redoes the answer on screen. Answers are kept short during the meeting: at most four short lines, about 60 words.
+
 Auto-Answer can also answer **whenever the interviewer stops talking**, not only questions (Settings > AI Actions > Auto-Answer > Answer when). Feedback such as "Très bonne réponse, huit sur dix" or "je regarde et je te fais un retour" is left alone. **Answer with: Say** writes the words to speak, in the first person.
 
 ### Reading while you speak
 
-- **Compact box** (`Ctrl+Alt+K`, or the header button): the answer alone in a nearly invisible, framed box at the top of the screen. Drag it anywhere and resize it from its edges; it keeps its place. Double-click it to go back.
-- **Reading pace**: answers start at the top and scroll gently at reading speed (− / + in the compact box) instead of jumping to the newest words. Hovering holds them still.
+- **Compact box** (`Ctrl+Alt+K`, or the header button): the answer alone in a framed box at the top of the screen, on a 53 % background. Drag it anywhere and resize it from its edges; it keeps its place. Double-click it to go back. The eye button changes its background (2 %, 20 %, 53 %, 80 %; the full overlay's frosted blur is off in the box), and A− / A+ change its text size. Its bottom-left corner shows what the engine is doing: **Listening**, **Thinking** (from the question to the first words of the answer) or **Paused**, and nothing while the answer is being written. Its screen-share button shows whether it is hidden from screen sharing ("Visible in share" stays on view while it is not). Start Meeting opens it straight away; turn that off in Settings > General > Start in the compact box.
+- **Notes** (the note button in the compact box, shown by default): each live answer comes with 2 or 3 very short notes for your eyes only (a figure, a name or a term, a few words each), shown in a block on the right of the box. They aren't read aloud.
+- **Answer layout** (the Auto / Points / Story button in the compact box): **Points** gives 3 or 4 short bullet points, for direct questions; **Story** gives a short first-person story (the situation, what you did, the result), to tell an experience or walk through a scenario; **Auto** lets the AI choose by question. It applies from the next answer.
+- **Reading pace**: answers start at the top and scroll gently at reading speed (− / + in the compact box) instead of jumping to the newest words. While you speak, they move on as far as you have got in the box's text: past what turned yellow, or as many words as you have said, in your own words too, so what is left to say comes into view. Never ahead of you. When you aren't speaking, they start moving on their own 8 seconds after the text shows and after the interviewer's last word, and hold still again if the interviewer speaks. Hovering holds the reading pace still, not the following.
 - **Cue card** (Settings > AI Actions > Cue card > Keywords first): each answer opens with 3 to 5 keywords shown large, then one short sentence you can say at once.
-- **Read aloud** (`Ctrl+Alt+L`, or the headphones button): NexQ reads each sentence in your headset as soon as it is written. On the default output, Windows 10 2004 and later leave NexQ's own voice out of the interviewer's audio, so it is never transcribed as theirs.
+- **Read aloud** (`Ctrl+Alt+L`, or the headphones button): NexQ reads the essentials in your headset, not every word: the opening sentence, the gist of each point (one sentence per list item, two per paragraph, long sentences cut short) and about 55 words in all. Keywords, titles, labels such as "Situation :", tables and code are left out. Turning it on reads the answer on screen at once, then the next answers as they are written. On the default output, Windows 10 2004 and later leave NexQ's own voice out of the interviewer's audio, so it is never transcribed as theirs.
 - **Pause** (`Ctrl+Alt+P`): stops Auto-Answer and any reading; questions still show as cards to click.
-- **What you already said** is struck out of the answer (keywords, list items, sentences), so what is left to say stands out.
+- **What you already said** turns yellow in the answer (keywords, list items, sentences), so you see how far you are and what is left to say.
 - **Answer timer**: ⏱ shows how long you have been answering, amber from 90 seconds and red from 2 minutes.
 - When the interviewer asks **"Avez-vous des questions pour nous ?"**, NexQ suggests questions to ask instead of an answer.
 - A **prepared answer** that matches the question is read aloud at once (when reading aloud is on), instead of the AI's.
@@ -108,7 +118,7 @@ Auto-Answer can also answer **whenever the interviewer stops talking**, not only
 
 ## After the Interview
 
-1. Press `Ctrl+M` to end the meeting
+1. Press `Ctrl+M` twice to end the meeting (or **End**, then **Confirm end**)
 2. **Review the full transcript** in the Launcher -- every word from both sides is saved
 3. Open the meeting's **Debrief** tab: each question, what you answered, the feedback you got, what to improve and a better answer. **Keep as a prepared answer** adds it to Settings > Prepared Answers for next time
 4. Check the **AI Call Log** sidebar for all AI suggestions that were generated during the session

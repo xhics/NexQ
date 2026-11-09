@@ -9,7 +9,10 @@ import {
   Check,
   Globe,
   History,
+  AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
+import { retryLastAnswer } from "../lib/autoAnswer";
 import { AnswerMarkdown } from "./CueLine";
 import { PreparedStory, usePreparedStory } from "./PreparedStory";
 import { useSaidSinceAnswer } from "../hooks/useSaidSinceAnswer";
@@ -126,15 +129,6 @@ export function AIResponsePanel() {
     historyButtonRef.current?.focus();
   }, []);
 
-  // Error state
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2">
-        <p className="text-xs text-destructive/70">{error}</p>
-      </div>
-    );
-  }
-
   // The answer a history / pinned tab shows (by id, so new answers never shift it)
   let displayResponse: AIResponse | null = null;
   if (activeTab !== "current") {
@@ -222,6 +216,10 @@ export function AIResponsePanel() {
           </div>
         )}
 
+        {/* The AI didn't answer: say so, and offer to ask again. The tabs,
+            History and the prepared story stay usable. */}
+        {activeTab === "current" && error && !inFlight && <AnswerError message={error} />}
+
         {/* Request in flight: progress, then the words as they arrive */}
         {activeTab === "current" && inFlight && (
           <div className="space-y-2.5" aria-atomic="false">
@@ -274,7 +272,7 @@ export function AIResponsePanel() {
         )}
 
         {/* Empty state */}
-        {activeTab === "current" && !inFlight && !currentContent && (
+        {activeTab === "current" && !inFlight && !currentContent && !error && (
           <div className="flex h-full flex-col items-center justify-center gap-2">
             <Sparkles className="h-5 w-5 text-primary/30" />
             <p className="text-xs text-muted-foreground/50">
@@ -333,6 +331,40 @@ export function AIResponsePanel() {
 }
 
 // --- Sub-components ---
+
+/** The AI's error, with Retry (the same question again). */
+function AnswerError({ message }: { message: string }) {
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(() => {
+    setRetrying(true);
+    retryLastAnswer()
+      .catch(() => {})
+      .finally(() => setRetrying(false));
+  }, []);
+  return (
+    <div role="alert" className="mb-2.5 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive/80" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-foreground/90">The AI didn&apos;t answer</p>
+          <p className="mt-0.5 break-words text-meta text-muted-foreground/70">{message}</p>
+        </div>
+        <button
+          type="button"
+          onClick={retry}
+          disabled={retrying}
+          className="flex shrink-0 items-center gap-1 rounded-md bg-primary/15 px-2 py-1 text-meta font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-50 cursor-pointer"
+        >
+          <RotateCcw className="h-3 w-3" aria-hidden="true" />
+          Retry
+        </button>
+      </div>
+      <p className="mt-1.5 text-meta text-muted-foreground/50">
+        Or press <kbd className="rounded border border-border/30 bg-secondary/30 px-1 font-mono">Space</kbd> for a new answer.
+      </p>
+    </div>
+  );
+}
 
 function SourcesList({ sources }: { sources?: StreamSource[] }) {
   if (!sources || sources.length === 0) return null;

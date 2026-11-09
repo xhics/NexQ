@@ -601,6 +601,11 @@ export interface DetectedQuestion {
   confidence: number;
   timestamp_ms: number;
   source: Speaker;
+  /**
+   * The rules found no question in it, but it says something: the AI is
+   * asked, and answers only if something was asked (else nothing changes).
+   */
+  unsure?: boolean;
 }
 
 // == CONFIG TYPES ==
@@ -948,6 +953,17 @@ export interface GlobalDefaults {
   autoAnswerMode: "Assist" | "WhatToSay";
   /** When Auto-Answer answers: detected questions only, or whenever the other party stops talking. */
   autoAnswerTrigger: "questions" | "turn";
+  /**
+   * Start the answer while the question is still being asked (its opening),
+   * and add the rest once they finish. Unset (older settings) means on.
+   */
+  autoAnswerDraft?: boolean;
+  /**
+   * When a turn of the other party doesn't look like a question but says
+   * something, ask the AI, which answers only if something was asked.
+   * Unset (older settings) means on.
+   */
+  autoAnswerUnsure?: boolean;
 }
 
 export interface InstructionPresets {

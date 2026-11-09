@@ -7,6 +7,7 @@ import { CallLogPanel } from "../calllog";
 import { useMeetingStore } from "../stores/meetingStore";
 import { useScenarioStore } from "../stores/scenarioStore";
 import { useSpeakerStore } from "../stores/speakerStore";
+import { useConfigStore } from "../stores/configStore";
 import type { AIScenario, AudioMode, Meeting, SpeakerIdentity } from "../lib/types";
 
 // Mounts the real overlay and every store behind it: a selector that returns a
@@ -70,6 +71,30 @@ describe("OverlayView", () => {
     });
     renderOverlay(audioMode, scenario);
     expect(screen.getByRole("button", { name: "End meeting" })).toBeTruthy();
+  });
+
+  it("a first click on End only asks to confirm, and the meeting goes on", () => {
+    const endMeetingFlow = vi.fn(async () => {});
+    useMeetingStore.setState({ endMeetingFlow });
+    renderOverlay("online", "interview");
+    act(() => { fireEvent.click(screen.getByRole("button", { name: "End meeting" })); });
+    expect(endMeetingFlow).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Confirm end meeting" })).toHaveTextContent("Confirm end");
+    act(() => { fireEvent.click(screen.getByRole("button", { name: "Confirm end meeting" })); });
+    expect(endMeetingFlow).toHaveBeenCalledTimes(1);
+  });
+
+  it("a new meeting opens in the compact answer box by default", () => {
+    useConfigStore.setState({ startCompact: true });
+    renderOverlay("online", "interview");
+    expect(screen.getByRole("region", { name: "Answer" })).toBeTruthy();
+  });
+
+  it("opens the full overlay when the compact start is turned off", () => {
+    useConfigStore.setState({ startCompact: false });
+    renderOverlay("online", "interview");
+    expect(screen.queryByRole("region", { name: "Answer" })).toBeNull();
+    useConfigStore.setState({ startCompact: true });
   });
 
   it("shows the name of a scenario whose prompts were edited", () => {

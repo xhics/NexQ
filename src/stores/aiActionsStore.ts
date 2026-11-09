@@ -64,6 +64,8 @@ function createDefaultConfigs(): AllActionConfigs {
       autoTrigger: false,
       autoAnswerMode: "Assist",
       autoAnswerTrigger: "questions",
+      autoAnswerDraft: true,
+      autoAnswerUnsure: true,
     },
     customInstructions: "",
     instructionPresets: { tone: null, format: null, length: null, opinion: null },
@@ -141,7 +143,7 @@ function composeInstructions(presets: InstructionPresets, custom: string): strin
   }
   if (presets.length) {
     const lengthMap: Record<string, string> = {
-      brief: "Brief responses.",
+      brief: "Brief responses: two or three short lines.",
       standard: "Standard length responses.",
       detailed: "Detailed responses.",
     };

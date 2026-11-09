@@ -93,14 +93,16 @@ export function normalizeAccelerator(accelerator: string, mac = isMacPlatform())
 }
 
 /**
- * Shortcuts NexQ already uses (global: Ctrl+M, Ctrl+B, Ctrl+,; in-window:
- * Ctrl+Shift+L dev log, Ctrl+Shift+D demo). A user binding must not take one.
+ * Shortcuts NexQ already uses (global: Ctrl+M, Ctrl+B during a meeting;
+ * in-window: Ctrl+, settings, Ctrl+Shift+L dev log, Ctrl+Shift+M mute,
+ * Ctrl+Shift+D demo). A user binding must not take one.
  */
 export const RESERVED_SHORTCUTS: Record<string, string> = {
   "CmdOrCtrl+M": "Start / end meeting",
   "CmdOrCtrl+B": "Show / hide overlay",
   "CmdOrCtrl+,": "Open settings",
   "CmdOrCtrl+Shift+L": "Dev log",
+  "CmdOrCtrl+Shift+M": "Mute / unmute your mic",
   "CmdOrCtrl+Shift+D": "Demo mode",
   "CmdOrCtrl+Alt+P": "Pause / resume Auto-Answer",
   "CmdOrCtrl+Alt+L": "Read answers aloud",

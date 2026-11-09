@@ -1,6 +1,8 @@
-// SP5 Enhancement 4: Consolidated keyboard shortcuts for live meeting overlay.
-// Single-key shortcuts (B, S, K, M) work outside inputs; Escape always works;
-// Ctrl+B and Ctrl+Shift+L are carried over from their previous individual handlers.
+// Keyboard shortcuts of the live meeting overlay. Single keys (B, S, K) only
+// open panels or add a bookmark, outside inputs; muting your mic takes
+// Ctrl+Shift+M, so a word typed into the wrong window never cuts the mic.
+// Escape always closes the panels. Ctrl+B belongs to the global show / hide
+// overlay shortcut, so bookmarks are B.
 
 import { useEffect } from "react";
 import { useMeetingStore } from "../stores/meetingStore";
@@ -33,11 +35,10 @@ export function useMeetingShortcuts(actions: ShortcutActions) {
         return;
       }
 
-      // Ctrl+B: bookmark (keep existing shortcut)
-      if (e.ctrlKey && e.key === "b" && !e.shiftKey && !e.altKey) {
-        if (isInput) return;
+      // Ctrl+Shift+M: mute / unmute your mic
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "m") {
         e.preventDefault();
-        actions.addBookmark();
+        actions.toggleMute();
         return;
       }
 
@@ -48,8 +49,8 @@ export function useMeetingShortcuts(actions: ShortcutActions) {
         return;
       }
 
-      // Single-key shortcuts only outside inputs
-      if (isInput) return;
+      // Single-key shortcuts only outside inputs, and never with a modifier
+      if (isInput || e.ctrlKey || e.metaKey || e.altKey) return;
 
       switch (e.key.toLowerCase()) {
         case "b":
@@ -60,9 +61,6 @@ export function useMeetingShortcuts(actions: ShortcutActions) {
           break;
         case "k":
           actions.toggleBookmarks();
-          break;
-        case "m":
-          actions.toggleMute();
           break;
       }
     };

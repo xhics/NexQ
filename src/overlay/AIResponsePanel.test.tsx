@@ -31,6 +31,17 @@ describe("AIResponsePanel", () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it("an error says so, offers Retry and keeps the earlier answers' tabs", () => {
+    render(<AIResponsePanel />);
+    answer("Assist", "first");
+    answer("Recap", "second");
+    act(() => s().setError("Request timed out"));
+    expect(screen.getByRole("alert")).toHaveTextContent("The AI didn't answer");
+    expect(screen.getByRole("alert")).toHaveTextContent("Request timed out");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(tabs()).toEqual(["Current", "Assist"]);
+  });
+
   it("Current is the newest answer and is not repeated as a tab", () => {
     render(<AIResponsePanel />);
     answer("Assist", "first");

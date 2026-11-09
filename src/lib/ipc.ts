@@ -235,9 +235,15 @@ export async function generateAssist(
       .filter((s) => s.text.trim().length > 0);
   }
 
+  // A live answer is laid out as chosen in the compact box (points, story, or by question).
+  const answerStyle = opts.pastMeetingId
+    ? undefined
+    : (await import("../stores/configStore")).useConfigStore.getState().answerStyle;
+
   return invoke("generate_assist", {
     mode,
     customQuestion,
+    ...(answerStyle ? { answerStyle } : {}),
     transcriptSegments: JSON.stringify(segments),
     requestId,
     ...(opts.pastMeetingId ? { pastMeetingId: opts.pastMeetingId } : {}),
@@ -725,6 +731,11 @@ export async function dismissMeetingPrompt(): Promise<void> {
 
 export async function getStealthSupport(): Promise<StealthSupport> {
   return invoke<StealthSupport>("get_stealth_support");
+}
+
+/** The window's desktop blur (Windows): off for the see-through compact box. */
+export async function setWindowBlur(on: boolean): Promise<void> {
+  return invoke("set_window_blur", { on });
 }
 
 /** Diagnostics: where the app log lives and whether verbose logging is on. */

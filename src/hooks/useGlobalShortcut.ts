@@ -12,21 +12,38 @@ import { isOverlayVisible, meetingShortcutAction, showLauncherWindow, showMeetin
 import { endMeetingFromThisWindow } from "./useUpdater";
 import { showToast } from "../stores/toastStore";
 import { useConfigStore } from "../stores/configStore";
-import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, normalizeAccelerator, reservedShortcutAction } from "../lib/shortcutLabel";
+import { MEETING_SHORTCUTS, TOGGLE_COMPACT_EVENT, formatShortcut, normalizeAccelerator, reservedShortcutAction } from "../lib/shortcutLabel";
 import { useQuestionStore } from "../stores/questionStore";
 import { stopSpeaking } from "./useLiveSpeech";
+import { confirmsEnd, emitEndArmed } from "../lib/endConfirm";
 
-/** Ctrl+M: end the running meeting (in every window that holds it) or start one. */
+/** When Ctrl+M was last pressed during a meeting, waiting for the second press. */
+let endArmedAt: number | null = null;
+
+/**
+ * Ctrl+M: start a meeting, or end the running one (in every window that holds
+ * it) when pressed twice within 3 s. The first press only asks, so a stray
+ * Ctrl+M typed in another app never ends an interview.
+ */
 async function toggleMeetingFromShortcut(): Promise<void> {
   const store = useMeetingStore.getState();
   const quitPending = store.activeMeeting ? false : await isQuitPending().catch(() => false);
   switch (meetingShortcutAction(!!store.activeMeeting, quitPending)) {
     case "end":
+      if (!confirmsEnd(endArmedAt, Date.now())) {
+        endArmedAt = Date.now();
+        // The overlay is the window on screen: it shows the question.
+        emitEndArmed().catch(() => {});
+        showToast(`Press ${formatShortcut("CmdOrCtrl+M")} again to end the meeting`, "warning");
+        break;
+      }
+      endArmedAt = null;
       if (!(await endMeetingFromThisWindow())) {
         showToast("Couldn't finish saving the meeting", "error");
       }
       break;
     case "start":
+      endArmedAt = null;
       await store.startMeetingFlow();
       break;
     case "ignore":
@@ -168,26 +185,6 @@ export function useGlobalShortcut() {
             }
           },
         },
-        {
-          key: "CmdOrCtrl+B",
-          handler: (event) => {
-            if (event.state === "Pressed") {
-              (async () => {
-                if (await isOverlayVisible()) await showLauncherWindow();
-                else if (useMeetingStore.getState().activeMeeting) await showMeetingOverlay();
-              })().catch(() => {});
-            }
-          },
-        },
-        {
-          key: "CmdOrCtrl+,",
-          handler: (event) => {
-            if (event.state === "Pressed") {
-              const store = useMeetingStore.getState();
-              store.setSettingsOpen(!store.settingsOpen);
-            }
-          },
-        },
       ];
 
       for (const { key, handler } of defs) {
@@ -209,6 +206,51 @@ export function useGlobalShortcut() {
         unregister(s).catch(() => {});
       });
     };
+  }, []);
+
+  // Ctrl+B switches between the dashboard and the overlay from any app, but
+  // only during a meeting (held by the launcher, which always exists), so it
+  // stays Bold in Word, Docs or Slack the rest of the time.
+  useEffect(() => {
+    if (!meetingActive || getCurrentWebviewWindow().label !== "launcher") return;
+    const key = "CmdOrCtrl+B";
+    let registered = false;
+    let cancelled = false;
+    (async () => {
+      try {
+        await unregister(key).catch(() => {});
+        if (cancelled) return;
+        await register(key, (event) => {
+          if (event.state !== "Pressed") return;
+          (async () => {
+            if (await isOverlayVisible()) await showLauncherWindow();
+            else if (useMeetingStore.getState().activeMeeting) await showMeetingOverlay();
+          })().catch(() => {});
+        });
+        registered = true;
+        if (cancelled) unregister(key).catch(() => {});
+      } catch (err) {
+        console.warn(`Failed to register shortcut ${key}:`, err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (registered) unregister(key).catch(() => {});
+    };
+  }, [meetingActive]);
+
+  // Ctrl+, opens Settings in a NexQ window, and leaves other apps' Ctrl+,
+  // (VS Code, browsers...) alone.
+  useEffect(() => {
+    function handleSettingsKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === ",") {
+        e.preventDefault();
+        const store = useMeetingStore.getState();
+        store.setSettingsOpen(!store.settingsOpen);
+      }
+    }
+    window.addEventListener("keydown", handleSettingsKey);
+    return () => window.removeEventListener("keydown", handleSettingsKey);
   }, []);
 
   // Window-level shortcuts (work when window is active/focused)

@@ -3,23 +3,53 @@ import { AnswerMarkdown } from "./CueLine";
 import { PreparedStory, usePreparedStory } from "./PreparedStory";
 import { useSaidSinceAnswer } from "../hooks/useSaidSinceAnswer";
 import { answerTimeColor, formatAnswerTime, useAnswerTimer } from "../hooks/useAnswerTimer";
-import { Maximize2, Eye, Pause, Play, Headphones } from "lucide-react";
+import { Maximize2, Eye, Pause, Play, Headphones, ScreenShare, ScreenShareOff, List, BookOpen, Sparkles, StickyNote } from "lucide-react";
+import { toggleStealthMode } from "../hooks/useGlobalShortcut";
+import { formatShortcut } from "../lib/shortcutLabel";
 import { stopSpeaking } from "../hooks/useLiveSpeech";
 import { useQuestionStore } from "../stores/questionStore";
 import { useReadingScroll } from "../hooks/useReadingScroll";
+import { splitNotes } from "../lib/answerNotes";
 import { useStreamStore } from "../stores/streamStore";
-import { useConfigStore } from "../stores/configStore";
+import { useConfigStore, type AnswerStyle } from "../stores/configStore";
 
 /** Compact box size, and the overlay's normal minimum to restore. */
 export const COMPACT_SIZE = { width: 760, height: 130 };
 const COMPACT_MIN = { width: 260, height: 56 };
 const OVERLAY_MIN = { width: 400, height: 480 };
-// Nearly invisible by default; never fully 0, so the box still takes clicks.
-const OPACITY_PRESETS = [0.02, 0.08, 0.2, 0.4];
+// 53 % by default; never fully 0, so the box still takes clicks.
+const OPACITY_PRESETS = [0.02, 0.2, 0.53, 0.8];
+const FONT_MIN = 8;
+const FONT_MAX = 32;
+/** How the next answers are laid out, in the order the button cycles. */
+const STYLES: { style: AnswerStyle; label: string; title: string }[] = [
+  { style: "auto", label: "Auto", title: "Layout by question: points for a direct question, a story to tell an experience" },
+  { style: "points", label: "Points", title: "Points: short bullet points, for direct questions" },
+  { style: "story", label: "Story", title: "Story: a short first-person story, to tell an experience or a scenario" },
+];
 const SPEEDS = [6, 10, 14, 20, 30, 45];
 const RATES = [1, 1.15, 1.3, 1.5, 1.75];
 
 type Bounds = { x: number; y: number; width: number; height: number };
+
+export type EngineStatus = "paused" | "thinking" | "listening";
+
+/**
+ * What the engine is doing, for the box's corner: thinking from the moment
+ * an answer is asked for until its first words, listening otherwise, and
+ * nothing while an answer is being written (the words show it).
+ */
+export function engineStatus(paused: boolean, isStreaming: boolean, phase: string): EngineStatus | null {
+  if (phase === "sending" || phase === "waiting" || phase === "thinking") return "thinking";
+  if (isStreaming) return null;
+  return paused ? "paused" : "listening";
+}
+
+const STATUS_LOOK: Record<EngineStatus, { label: string; text: string; dot: string }> = {
+  listening: { label: "Listening", text: "text-white/60", dot: "bg-emerald-400" },
+  thinking: { label: "Thinking", text: "text-sky-300", dot: "bg-sky-400 animate-pulse" },
+  paused: { label: "Paused", text: "text-amber-300/80", dot: "bg-amber-300" },
+};
 const BOUNDS_KEY = "nexq.compactBounds";
 
 /** Where the box was last left, kept across restarts in this window's storage. */
@@ -75,6 +105,8 @@ export async function watchCompactBounds(): Promise<() => void> {
 export async function enterCompactWindow(): Promise<void> {
   const { getCurrentWindow, currentMonitor, LogicalSize, LogicalPosition } = await import("@tauri-apps/api/window");
   const win = getCurrentWindow();
+  // See-through: the overlay's desktop blur would frost the whole box.
+  await import("../lib/ipc").then(({ setWindowBlur }) => setWindowBlur(false)).catch(() => {});
   lastFull = await currentBounds();
   await win.setMinSize(new LogicalSize(COMPACT_MIN.width, COMPACT_MIN.height));
   const saved = loadBounds();
@@ -98,6 +130,7 @@ export async function enterCompactWindow(): Promise<void> {
 export async function leaveCompactWindow(): Promise<void> {
   const { getCurrentWindow, LogicalSize, LogicalPosition } = await import("@tauri-apps/api/window");
   const win = getCurrentWindow();
+  await import("../lib/ipc").then(({ setWindowBlur }) => setWindowBlur(true)).catch(() => {});
   saveBounds(await currentBounds());
   await win.setMinSize(new LogicalSize(OVERLAY_MIN.width, OVERLAY_MIN.height));
   const full = lastFull ?? { x: 50, y: 50, width: 500, height: 700 };
@@ -111,13 +144,18 @@ export async function leaveCompactWindow(): Promise<void> {
  * Auto-Answer go on.
  */
 export function CompactAnswer({ onExit }: { onExit: () => void }) {
-  const content = useStreamStore((s) => s.currentContent);
+  const fullContent = useStreamStore((s) => s.currentContent);
+  // The notes show on the right, the answer alone on the left.
+  const { answer: content, notes } = splitNotes(fullContent);
   const isStreaming = useStreamStore((s) => s.isStreaming);
   const phase = useStreamStore((s) => s.phase);
   const error = useStreamStore((s) => s.error);
   const fontSize = useConfigStore((s) => s.aiResponseFontSize ?? 12);
   const color = useConfigStore((s) => s.aiResponseTextColor ?? "#d4d4d8");
-  const stored = useConfigStore((s) => s.compactOpacity ?? 0.02);
+  const setFontSize = useConfigStore((s) => s.setAiResponseFontSize);
+  const answerStyle = useConfigStore((s) => s.answerStyle ?? "auto");
+  const setAnswerStyle = useConfigStore((s) => s.setAnswerStyle);
+  const stored = useConfigStore((s) => s.compactOpacity ?? 0.53);
   const opacity = Math.max(stored, 0.02);
   const setOpacity = useConfigStore((s) => s.setCompactOpacity);
   const speed = useConfigStore((s) => s.readingSpeed ?? 14);
@@ -128,6 +166,8 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   const setSpeakAnswers = useConfigStore((s) => s.setSpeakAnswers);
   const speechRate = useConfigStore((s) => s.speechRate ?? 1.15);
   const setSpeechRate = useConfigStore((s) => s.setSpeechRate);
+  const stealthMode = useConfigStore((s) => s.stealthMode);
+  const stealthShortcut = useConfigStore((s) => s.stealthShortcut);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Keep the box's place across restarts, even if NexQ closes while it's open.
@@ -144,6 +184,8 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   const answerMs = useAnswerTimer();
   const said = useSaidSinceAnswer();
   const reading = useReadingScroll(scrollRef, content, prepared.story?.id ?? null, speed);
+  const showNotes = useConfigStore((s) => s.showNotes ?? true);
+  const setShowNotes = useConfigStore((s) => s.setShowNotes);
 
   const startDrag = (e: React.MouseEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
@@ -151,8 +193,9 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
   };
 
   const cycleOpacity = () => {
-    const idx = OPACITY_PRESETS.findIndex((p) => Math.abs(p - opacity) < 0.01);
-    setOpacity(OPACITY_PRESETS[(idx + 1) % OPACITY_PRESETS.length]);
+    // The next preset up (a value saved between presets goes to the one above it).
+    const next = OPACITY_PRESETS.find((p) => p > opacity + 0.005);
+    setOpacity(next ?? OPACITY_PRESETS[0]);
   };
   const changeSpeed = (step: 1 | -1) => {
     const idx = SPEEDS.findIndex((v) => v >= speed);
@@ -160,7 +203,12 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
     setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, at + step))]);
   };
 
-  const waiting = (isStreaming || phase !== "idle") && !content;
+  const styleAt = Math.max(0, STYLES.findIndex((s) => s.style === answerStyle));
+  const style = STYLES[styleAt];
+  const StyleIcon = style.style === "points" ? List : style.style === "story" ? BookOpen : Sparkles;
+
+  // What the engine is doing; nothing while the answer is being written.
+  const status = engineStatus(paused, isStreaming, phase);
   const btn = "rounded p-1 text-white/70 hover:bg-white/15 hover:text-white";
 
   return (
@@ -191,9 +239,28 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
             {speechRate.toFixed(2).replace(/0$/, "")}×
           </button>
         )}
+        <button type="button" onClick={() => setAnswerStyle(STYLES[(styleAt + 1) % STYLES.length].style)}
+          className={`${btn} flex items-center gap-0.5 text-[9px] font-semibold`}
+          title={`${style.title} — click to change (next answers)`} aria-label={`Answer layout: ${style.label}`}>
+          <StyleIcon className="h-3 w-3" />{style.label}
+        </button>
+        <button type="button" onClick={() => setShowNotes(!showNotes)} className={`${btn} ${showNotes ? "text-primary" : ""}`}
+          title={showNotes ? "Notes on the right: shown — click to hide" : "Notes on the right: hidden — click to show"}
+          aria-label="Show the notes" aria-pressed={showNotes}>
+          <StickyNote className="h-3 w-3" />
+        </button>
+        <button type="button" onClick={() => setFontSize(Math.max(FONT_MIN, fontSize - 1))} className={`${btn} text-[9px] font-semibold`}
+          title="Smaller text" aria-label="Smaller text">A−</button>
+        <button type="button" onClick={() => setFontSize(Math.min(FONT_MAX, fontSize + 1))} className={`${btn} text-[11px] font-semibold`}
+          title={`Larger text (${fontSize + 3} px)`} aria-label="Larger text">A+</button>
         <button type="button" onClick={() => changeSpeed(-1)} className={`${btn} text-[10px] font-bold`} title="Scroll slower" aria-label="Scroll slower">−</button>
         <span className="text-[9px] tabular-nums text-white/60" title="Reading speed">{speed}</span>
         <button type="button" onClick={() => changeSpeed(1)} className={`${btn} text-[10px] font-bold`} title="Scroll faster" aria-label="Scroll faster">+</button>
+        <button type="button" onClick={() => { toggleStealthMode().catch(() => {}); }} className={`${btn} ${stealthMode ? "text-primary" : "text-amber-300"}`}
+          title={`${stealthMode ? "Hidden from screen share — click to show" : "Visible in screen share — click to hide"} (${formatShortcut(stealthShortcut)})`}
+          aria-label={stealthMode ? "Hidden from screen share" : "Visible in screen share"} aria-pressed={stealthMode}>
+          {stealthMode ? <ScreenShareOff className="h-3 w-3" /> : <ScreenShare className="h-3 w-3" />}
+        </button>
         <button type="button" onClick={cycleOpacity} className={btn}
           title={`Background: ${Math.round(opacity * 100)}% (click to cycle)`} aria-label="Change background transparency">
           <Eye className="h-3 w-3" />
@@ -215,13 +282,24 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
         </span>
       )}
 
-      {paused && (
-        <span className="absolute left-2 top-1 z-10 text-[9px] font-semibold uppercase tracking-wider text-amber-300/80" style={{ textShadow: "0 1px 2px #000" }}>
-          Paused
-        </span>
-      )}
+      <div className="pointer-events-none absolute bottom-1 left-2 z-10 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-wider" style={{ textShadow: "0 1px 2px #000" }}>
+        {status && (
+          <span className={`flex items-center gap-1 ${STATUS_LOOK[status].text}`} role="status" aria-label={`NexQ: ${STATUS_LOOK[status].label}`}>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${STATUS_LOOK[status].dot}`} />
+            {STATUS_LOOK[status].label}
+          </span>
+        )}
+        {/* Always on view while the box would show in a screen share. */}
+        {!stealthMode && (
+          <span className="pointer-events-auto text-amber-300/90" title={`Visible in screen share (${formatShortcut(stealthShortcut)} hides it)`}>
+            Visible in share
+          </span>
+        )}
+      </div>
 
-      <div ref={scrollRef} {...reading} className="min-h-0 flex-1 overflow-y-auto px-3 py-2" style={{ scrollbarWidth: "none" }} aria-live="polite">
+      {/* The buttons' row shows on hover: the text moves down under it rather than hide behind it. */}
+      <div className="flex min-h-0 flex-1 transition-[padding] duration-150 group-hover:pt-6">
+      <div ref={scrollRef} {...reading} className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-2" style={{ scrollbarWidth: "none" }} aria-live="polite">
         {prepared.story && (
           <div style={{ color, textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.6)" }}>
             <PreparedStory story={prepared.story} fontSize={fontSize + 3} onHide={prepared.hide} said={said} />
@@ -237,12 +315,30 @@ export function CompactAnswer({ onExit }: { onExit: () => void }) {
             <AnswerMarkdown content={content} cueSize={fontSize + 6} said={said} />
             {isStreaming && <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-primary/60" />}
           </div>
-        ) : (
-          <p className="text-xs text-white/50" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}>
-            {waiting ? "…" : paused ? "" : "Listening"}
-          </p>
-        )}
+        ) : null}
+      </div>
+      {showNotes && notes.length > 0 && <NotesBlock notes={notes} fontSize={fontSize + 1} />}
       </div>
     </div>
+  );
+}
+
+/** The answer's notes, beside it: figures, names and terms to glance at, not to read out. */
+function NotesBlock({ notes, fontSize }: { notes: string[]; fontSize: number }) {
+  return (
+    <aside
+      className="min-h-0 w-[34%] max-w-[300px] shrink-0 overflow-y-auto border-l border-sky-300/40 px-3 py-2"
+      style={{ scrollbarWidth: "none", textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.6)" }}
+      role="complementary" aria-label="Notes"
+    >
+      <div className="mb-0.5 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-sky-300">
+        <StickyNote className="h-2.5 w-2.5" />Notes
+      </div>
+      <ul className="space-y-0.5">
+        {notes.map((n, i) => (
+          <li key={i} className="text-sky-100" style={{ fontSize: `${fontSize}px`, lineHeight: 1.35 }}>· {n}</li>
+        ))}
+      </ul>
+    </aside>
   );
 }

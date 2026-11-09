@@ -48,7 +48,8 @@ async function mountWindow(label: "launcher" | "overlay") {
   useConfigStore.setState({ stealthShortcut: "", meetingAudioConfig: null });
   stores.push(useMeetingStore);
   renderHook(() => useGlobalShortcut());
-  await waitFor(() => expect(shortcuts.has("CmdOrCtrl+,")).toBe(true));
+  if (label === "launcher") await waitFor(() => expect(shortcuts.has("CmdOrCtrl+M")).toBe(true));
+  else await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   return useMeetingStore;
 }
 
@@ -65,7 +66,6 @@ afterEach(() => {
 
 it("starts recording in the launcher that owns Web Speech when the overlay loads last", async () => {
   const launcher = await mountWindow("launcher");
-  shortcuts.delete("CmdOrCtrl+,");
   const overlay = await mountWindow("overlay");
 
   await act(async () => { shortcuts.get("CmdOrCtrl+M")!({ state: "Pressed" }); });
@@ -123,4 +123,32 @@ it("leaves the Assist shortcut to the overlay", async () => {
   act(() => launcher.setState({ activeMeeting: { id: "m1" } as Meeting }));
   await new Promise((r) => setTimeout(r, 20));
   expect(shortcuts.has(DEFAULT_ASSIST_SHORTCUT)).toBe(false);
+});
+
+it("a first Ctrl+M during a meeting only asks, and the meeting goes on", async () => {
+  const launcher = await mountWindow("launcher");
+  act(() => launcher.setState({ activeMeeting: { id: "live" } as Meeting }));
+  emitted.length = 0;
+  await act(async () => { shortcuts.get("CmdOrCtrl+M")!({ state: "Pressed" }); });
+  await waitFor(() => expect(emitted.map(([event]) => event)).toContain("nexq:end_meeting_armed"));
+  expect(launcher.getState().activeMeeting?.id).toBe("live");
+});
+
+it("holds Ctrl+B only during a meeting, and never Ctrl+, from other apps", async () => {
+  const launcher = await mountWindow("launcher");
+  expect(shortcuts.has("CmdOrCtrl+B")).toBe(false);
+  expect(shortcuts.has("CmdOrCtrl+,")).toBe(false);
+
+  act(() => launcher.setState({ activeMeeting: { id: "m1" } as Meeting }));
+  await waitFor(() => expect(shortcuts.has("CmdOrCtrl+B")).toBe(true));
+
+  act(() => launcher.setState({ activeMeeting: null }));
+  await waitFor(() => expect(shortcuts.has("CmdOrCtrl+B")).toBe(false));
+});
+
+it("Ctrl+, in a NexQ window opens Settings", async () => {
+  const launcher = await mountWindow("launcher");
+  act(() => launcher.setState({ settingsOpen: false }));
+  act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", ctrlKey: true })); });
+  expect(launcher.getState().settingsOpen).toBe(true);
 });

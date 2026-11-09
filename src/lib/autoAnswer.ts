@@ -8,7 +8,7 @@
 
 import { cancelGeneration } from "./ipc";
 import { logToFile } from "./logger";
-import { runUserAction } from "./userAction";
+import { lastUserAction, runUserAction } from "./userAction";
 import type { TurnSignal } from "./types";
 import { useQuestionStore, type AutoAnswerRef } from "../stores/questionStore";
 import { useStreamStore } from "../stores/streamStore";
@@ -23,6 +23,52 @@ export const REFUSED = "Generation already in progress";
 export function sameQuestion(a: string | null | undefined, b: string | null | undefined): boolean {
   const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   return a != null && b != null && words(a) === words(b);
+}
+
+/**
+ * Words that acknowledge without asking anything new: "oui", "d'accord",
+ * "ok", "très bien"... said while you answer, or glued to the question by a
+ * transcriber that writes no punctuation ("parle-moi d'un échec oui").
+ */
+const BACKCHANNEL = new Set([
+  "oui", "ouais", "ok", "okay", "d'accord", "daccord", "voilà", "voila", "hein", "bon", "bien",
+  "très", "tres", "super", "parfait", "génial", "top", "merci", "exactement", "effectivement", "absolument",
+  "entendu", "ah", "oh", "euh", "hum", "hmm", "mh", "mhm", "mm", "ben", "bah", "alors", "et", "donc", "c'est", "ça",
+  "ca", "vas-y", "allez-y", "allez", "vas", "y", "je", "vois", "comprends", "intéressant", "interessant", "note",
+  "yes", "yeah", "yep", "right", "sure", "great", "good", "fine", "cool", "nice", "perfect", "thanks", "uh", "um",
+  "i", "see",
+]);
+
+const answerWords = (text: string) =>
+  text.toLowerCase().replace(/’/g, "'").replace(/[^\p{L}\p{N}'-]+/gu, " ").split(" ").filter(Boolean);
+
+/** Whether `text` only acknowledges ("Oui, d'accord, très bien"), asking nothing. */
+export function isBackchannel(text: string): boolean {
+  const words = answerWords(text);
+  return words.length > 0 && words.every((w) => BACKCHANNEL.has(w));
+}
+
+/** The words of `text` without acknowledgements at its start or end. */
+function core(text: string): string {
+  const words = answerWords(text);
+  let start = 0;
+  let end = words.length;
+  while (start < end && BACKCHANNEL.has(words[start])) start++;
+  while (end > start && BACKCHANNEL.has(words[end - 1])) end--;
+  return words.slice(start, end).join(" ");
+}
+
+/**
+ * Whether `next` is still the question `prev` was, once acknowledgements
+ * around it are left out: an answer on screen isn't redone because "oui" or
+ * "d'accord" was glued to the question ("parle-moi d'un échec oui"). A word
+ * that changes what is asked ("…do first?") still makes another question.
+ */
+export function samePoint(prev: string | null | undefined, next: string | null | undefined): boolean {
+  if (prev == null || next == null) return false;
+  if (sameQuestion(prev, next)) return true;
+  const before = core(prev);
+  return before !== "" && before === core(next);
 }
 
 export type TurnStep =
@@ -49,20 +95,20 @@ export function decideTurnStep(
   const early = current && current.early && current.segmentId === segmentId ? current : null;
   switch (turn) {
     case "eager_end":
-      if (!question || sameQuestion(early?.question, question)) return { kind: "none" };
+      if (!question || samePoint(early?.question, question)) return { kind: "none" };
       return { kind: "answer", question, early: true, replaces: !!early };
     case "resumed":
       return early ? { kind: "withdraw" } : { kind: "none" };
     case "end":
       if (early) {
-        if (sameQuestion(early.question, question)) return { kind: "confirm" };
+        if (samePoint(early.question, question)) return { kind: "confirm" };
         return question
           ? { kind: "answer", question, early: false, replaces: true }
           : { kind: "withdraw" };
       }
       if (!question) return { kind: "none" };
       // A repeated "done" for a question already answered.
-      if (current?.segmentId === segmentId && sameQuestion(current.question, question)) return { kind: "none" };
+      if (current?.segmentId === segmentId && samePoint(current.question, question)) return { kind: "none" };
       return { kind: "answer", question, early: false, replaces: false };
   }
 }
@@ -85,6 +131,29 @@ export async function stopAutoAnswer(ref: AutoAnswerRef): Promise<void> {
   // Stopped while still sending: no end event will settle the progress.
   useStreamStore.getState().clearPending(ref.requestId);
   await Promise.race([ref.done, new Promise((resolve) => setTimeout(resolve, RELEASE_WAIT_MS))]);
+}
+
+/**
+ * Stops `ref` if it's still running but keeps what it wrote on screen, so
+ * the next answer goes on from it: the question grew, it wasn't wrong.
+ * Resolves once it has let go, at most RELEASE_WAIT_MS later.
+ */
+export async function haltAutoAnswer(ref: AutoAnswerRef): Promise<void> {
+  if (!useStreamStore.getState().isRunning(ref.requestId)) return;
+  await cancelGeneration(ref.requestId).catch(() => {});
+  useStreamStore.getState().clearPending(ref.requestId);
+  await Promise.race([ref.done, new Promise((resolve) => setTimeout(resolve, RELEASE_WAIT_MS))]);
+}
+
+/**
+ * The question grew after `ref` started: it stops but stays on screen, and
+ * the answer to the whole question goes on from it (or starts over, if it
+ * misread the question).
+ */
+export async function keepToContinue(ref: AutoAnswerRef): Promise<void> {
+  useQuestionStore.getState().setAutoAnswer({ ...ref, draft: true, startedAt: Date.now() });
+  logAutoAnswer("grown");
+  await haltAutoAnswer(ref);
 }
 
 /** Whether the newest automatic answer is still being sent or streamed. */
@@ -124,6 +193,12 @@ export function runYourAction(mode: string, question?: string): Promise<void> {
   }).then(() => answer);
 }
 
+/** Asks again what the last action asked (the same question), or Assist. */
+export function retryLastAnswer(): Promise<void> {
+  const last = lastUserAction();
+  return runYourAction(last?.mode ?? "Assist", last?.question);
+}
+
 // Decisions run one at a time, so one never starts while another's stop is
 // still letting go. With nothing queued, a step runs at once.
 let queued: Promise<unknown> | null = null;
@@ -148,7 +223,7 @@ export function inTurn<T>(task: () => T | Promise<T>): Promise<T> {
   return result;
 }
 
-const counts = { early: 0, kept: 0, withdrawn: 0, answered: 0, held: 0, stoppedForYou: 0 };
+const counts = { early: 0, kept: 0, withdrawn: 0, answered: 0, held: 0, stoppedForYou: 0, drafted: 0, continued: 0, grown: 0, redone: 0, unsure: 0, notAsked: 0, followOn: 0 };
 type AutoAnswerEvent = keyof typeof counts;
 
 /** One log line per event, with running totals; never any transcript text. */

@@ -3,13 +3,16 @@ import { HelpCircle, Sparkles, Check, Clock, X } from "lucide-react";
 import { onQuestionDetected, onTranscriptFinal, onTranscriptUpdate } from "../lib/events";
 import { runUserAction } from "../lib/userAction";
 import {
-  REFUSED, answerRunning, autoAnswerRunning, decideTurnStep, inTurn, logAutoAnswer, runYourAction, sameQuestion,
-  stopAutoAnswer,
+  REFUSED, answerRunning, autoAnswerRunning, decideTurnStep, inTurn, isBackchannel, logAutoAnswer, runYourAction,
+  haltAutoAnswer, keepToContinue, sameQuestion, samePoint, stopAutoAnswer,
 } from "../lib/autoAnswer";
 import { useTranscriptStore } from "../stores/transcriptStore";
 import { isSpeakingAnswer } from "../hooks/useLiveSpeech";
+import { wordsSaidSinceAnswer } from "../hooks/useSaidSinceAnswer";
+import { withoutNotes } from "../lib/answerNotes";
 import { useAIActionsStore } from "../stores/aiActionsStore";
 import { useQuestionStore } from "../stores/questionStore";
+import { NOTHING_MARK, REDO_MARK, answeredNothing, useStreamStore } from "../stores/streamStore";
 import { showToast } from "../stores/toastStore";
 import type { DetectedQuestion, TranscriptSegment, TranscriptUpdateEvent } from "../lib/types";
 
@@ -80,6 +83,20 @@ const FRENCH_CLAUSE_STARTERS = [
   "parlez-moi", "parle-moi", "racontez-moi", "raconte-moi", "expliquez-moi", "explique-moi", "expliquez", "explique",
   "décrivez", "décrivez-moi", "décris", "décris-moi", "dites-moi", "dis-moi", "présentez-vous", "présente-toi",
   "donnez-moi", "donne-moi", "citez-moi", "cite-moi", "citez", "cite",
+  // Asking for more on the answer you gave: "précise", "développe", "conclus".
+  "précise", "précisez", "détaille", "détaillez", "développe", "développez", "illustre", "illustrez",
+  "conclus", "concluez", "résume", "résumez", "approfondis", "approfondissez",
+];
+/**
+ * Spoken yes/no questions without inversion or a question word, at a clause's
+ * start: "tu peux être plus précis", "vous avez déjà géré une crise",
+ * "prends le temps de conclure".
+ */
+const FRENCH_CLAUSE_OPENERS = [
+  "tu peux", "tu pourrais", "tu pourras", "vous pouvez", "vous pourriez", "tu as déjà", "t'as déjà", "vous avez déjà",
+  "tu aurais", "vous auriez", "tu connais", "vous connaissez", "tu ferais", "vous feriez", "tu saurais", "vous sauriez",
+  "tu veux bien", "vous voulez bien", "tu te souviens", "vous vous souvenez", "tu es déjà", "vous êtes déjà",
+  "prends le temps", "prenez le temps",
 ];
 /** Ask only as the sentence's first word: inside a sentence they link ("un projet où…"). */
 const FRENCH_FIRST_WORD_STARTERS = ["où", "d'où", "qui", "quoi"];
@@ -99,11 +116,32 @@ const FRENCH_LEAD_INS = new Set(["et", "mais", "donc", "alors", "puis", "ok", "o
 // Inversion ("avez-vous", "pensez-vous", "a-t-il") asks; "rendez-vous" doesn't.
 const FRENCH_INVERSION = /(^|\s)(?!rendez-vous)\p{L}+-(vous|tu|t-il|t-elle|t-on)(\s|$)/u;
 
+/** Ask at the end of a spoken question: "tu fais quoi", "vous feriez comment", "c'est quoi". */
+const FRENCH_END_WORDS = new Set(["quoi", "comment", "pourquoi", "combien", "quand", "où", "lequel", "laquelle", "lesquels", "lesquelles"]);
+/** Who is asked, or what about, just before that word. */
+const FRENCH_END_SUBJECT = /^(tu|t'|toi|vous|on|c'est|ça|ca|cela)$/u;
+/** Acknowledgements the transcriber glues after the question ("…tu fais quoi oui"). */
+const FRENCH_TRAILING_TAGS = new Set(["oui", "ouais", "ok", "okay", "d'accord", "hein", "bon", "voilà", "alors", "euh", "là", "donc", "exactement"]);
+
+/** "…mais que les coûts dépassent le budget, tu fais quoi (oui)": the asking word comes last. */
+function frenchEndAsks(text: string): boolean {
+  const words = text.split(/[\s,;:.!…]+/u).filter(Boolean);
+  while (words.length > 0 && FRENCH_TRAILING_TAGS.has(words[words.length - 1])) words.pop();
+  if (words.length < 3 || !FRENCH_END_WORDS.has(words[words.length - 1])) return false;
+  // "tu fais quoi", "vous feriez comment", "ça sert à quoi" (the subject within the 4 words before).
+  // Not "je t'explique comment": you telling, not them asking.
+  const before = words.slice(-5, -1);
+  if (before.some((w) => w === "je" || w.startsWith("j'"))) return false;
+  return before.some((w) => FRENCH_END_SUBJECT.test(w) || /^(t'|c')/u.test(w));
+}
+
 function frenchClauseAsks(clause: string, first: boolean): boolean {
   const words = clause.split(/\s+/u).filter(Boolean);
   while (words.length > 1 && FRENCH_LEAD_INS.has(words[0])) words.shift();
   const head = words[0] ?? "";
   if (FRENCH_CLAUSE_STARTERS.includes(head)) return true;
+  const opening = words.join(" ");
+  if (FRENCH_CLAUSE_OPENERS.some((o) => opening === o || opening.startsWith(`${o} `))) return true;
   if (first && FRENCH_FIRST_WORD_STARTERS.includes(head)) return true;
   if (FRENCH_QUEL.has(head)) {
     const rest = words.join(" ");
@@ -114,7 +152,7 @@ function frenchClauseAsks(clause: string, first: boolean): boolean {
 
 export function isFrenchQuestion(lower: string): boolean {
   const text = lower.replace(/’/g, "'").replace(/[.!…]+$/u, "");
-  if (FRENCH_PATTERNS.some((p) => text.includes(p)) || FRENCH_INVERSION.test(text)) return true;
+  if (FRENCH_PATTERNS.some((p) => text.includes(p)) || FRENCH_INVERSION.test(text) || frenchEndAsks(text)) return true;
   return text.split(/[,;:]+/u).some((clause, i) => frenchClauseAsks(clause.trim(), i === 0));
 }
 
@@ -176,7 +214,7 @@ export function whatToAnswer(text: string, everyTurn: boolean): string | null {
     if (tail.join(" ").length >= 400) break;
   }
   const said = tail.join(" ");
-  if (isTagQuestion(said) || said.split(/\s+/u).filter(Boolean).length < TURN_MIN_WORDS) return null;
+  if (isTagQuestion(said) || isBackchannel(said) || said.split(/\s+/u).filter(Boolean).length < TURN_MIN_WORDS) return null;
   if (isFeedback(said)) return null;
   return said;
 }
@@ -208,17 +246,116 @@ export function isClosingQuestion(text: string): boolean {
   return CLOSING_QUESTIONS.some((re) => re.test(lower));
 }
 
+/**
+ * A question this long (words), still being asked, is clear enough for a
+ * first draft of the answer: you have something to start with at once.
+ */
+export const DRAFT_MIN_WORDS = 6;
+/** A draft is continued by the answer to the question it began (the same line, or the next one when the transcriber split it) if it is this recent. */
+export const DRAFT_KEEP_MS = 20_000;
+/** Longest wait for the short draft to finish before its rest is written. */
+const DRAFT_FINISH_WAIT_MS = 6000;
+
+/** The request for a draft: the question as heard so far, and only an opening. */
+export function draftRequest(question: string): string {
+  return `${question}\n\n[The other person is still asking this question. Write only the start of the answer: the keywords line if you use one, then one or two short sentences the user can say right away. Stop there.]`;
+}
+
+/** The request for the rest of a draft, once the question is complete. */
+export function continuationRequest(question: string, draft: string): string {
+  return `${question}\n\n[The other person has finished asking. The user's screen already shows the start of the answer, quoted below, written while the question was still being asked. Write only what comes next for the complete question: two or three short lines (or sentences, if the start tells a story), without repeating the start, with no keywords line and no title. Only if that start answers a clearly different question (a big gap between the idea understood at first and the complete question), write ${REDO_MARK} alone on the first line, then the whole answer anew.]\n\nStart already on screen:\n"""\n${withoutNotes(draft).trim()}\n"""`;
+}
+
+/**
+ * An answer this recent that you haven't started saying goes on with what
+ * the other party adds (a question the transcriber split in two lines, a
+ * detail), instead of being replaced.
+ */
+export const FOLLOW_ON_MS = 30_000;
+/** Once you have said this many words of the answer, what they say next gets its own answer. */
+const FOLLOW_ON_MAX_SAID = 12;
+
+/**
+ * The request for what the other party added after an answer: nothing new
+ * keeps it (NOTHING_MARK), more adds to it, and only a clearly other
+ * question rewrites it (REDO_MARK).
+ */
+export function followOnRequest(said: string, onScreen: string): string {
+  return `${said}\n\n[The other person said this after the answer on the user's screen (quoted below) was written for what they said before. If it asks nothing new (feedback, an acknowledgement, a repeat, the same question in other words), reply with only ${NOTHING_MARK}. If it adds to the question or asks a little more, write only what comes next: one to three short lines, without repeating what is on screen, with no keywords line and no title. Only if it is clearly another question, so different that the answer on screen no longer fits at all, write ${REDO_MARK} alone on the first line, then the whole answer anew.]\n\nAnswer already on screen:\n"""\n${withoutNotes(onScreen).trim()}\n"""`;
+}
+
+/**
+ * The request for a turn the rules don't see as a question: the AI answers
+ * only if something was asked of the user, else NOTHING_MARK alone.
+ */
+export function unsureRequest(said: string): string {
+  return `${said}\n\n[This is what the other person just said; it may or may not ask the user something. If it asks the user anything to answer now (a question, a request to tell, explain, clarify, give more or conclude), answer it as usual. If it asks nothing (feedback, a comment, an acknowledgement, a thought not finished yet), reply with only ${NOTHING_MARK} and nothing else.]`;
+}
+
+/** Whether the AI judges the other party's turns the rules don't see as questions. */
+const judgesUnclear = () => {
+  const d = useAIActionsStore.getState().configs.globalDefaults;
+  return d.autoTrigger && d.autoAnswerTrigger !== "turn" && (d.autoAnswerUnsure ?? true);
+};
+
 /** Whether Auto-Answer answers every turn of the other party, not just questions. */
 const answersEveryTurn = () => {
   const d = useAIActionsStore.getState().configs.globalDefaults;
   return d.autoTrigger && d.autoAnswerTrigger === "turn";
 };
 
+/** The mode automatic answers use, for `question`. */
+function autoMode(question: string): string {
+  // "Do you have any questions for us?": suggest questions to ask, not an answer.
+  return isClosingQuestion(question)
+    ? "FollowUp"
+    : useAIActionsStore.getState().configs.globalDefaults.autoAnswerMode ?? "Assist";
+}
+
+/**
+ * The automatic answer what they say now goes on from, if any: a recent
+ * draft, or a recent answer you haven't started saying.
+ */
+function answerToGoOn() {
+  const ref = useQuestionStore.getState().autoAnswer;
+  if (!ref) return null;
+  const age = Date.now() - (ref.startedAt ?? 0);
+  if (ref.draft) return age < DRAFT_KEEP_MS ? ref : null;
+  return age < FOLLOW_ON_MS && wordsSaidSinceAnswer() < FOLLOW_ON_MAX_SAID ? ref : null;
+}
+
+/**
+ * A first draft of the answer while the question is still being asked (the
+ * line's newest words already look like a question): the opening shows at
+ * once, and the rest is added once the other party has finished.
+ */
+function startDraft(question: string, segmentId: string) {
+  const store = useQuestionStore.getState();
+  if (answerRunning() || store.paused || isSpeakingAnswer()) return;
+  // An answer for what they said just before is on screen: what they add now
+  // goes on from it once they finish, it isn't replaced by a new draft.
+  if (answerToGoOn()) return;
+  const requestId = crypto.randomUUID();
+  const done = runUserAction(autoMode(question), draftRequest(question), { requestId }).catch(() => {
+    const now = useQuestionStore.getState();
+    if (now.autoAnswer?.requestId === requestId) now.setAutoAnswer(null);
+  });
+  store.setAutoAnswer({ requestId, segmentId, question, early: true, draft: true, startedAt: Date.now(), done });
+  logAutoAnswer("drafted");
+}
+
 /**
  * Starts an automatic answer to `question` (a line's question), unless another
- * answer is running: then the question stays a card to click.
+ * answer is running: then the question stays a card to click. After a draft
+ * of it, the answer goes on from the draft instead of starting over.
  */
-function startAutoAnswer(question: DetectedQuestion, segmentId: string | undefined, early: boolean, detail?: string) {
+async function startAutoAnswer(question: DetectedQuestion, segmentId: string | undefined, early: boolean, detail?: string) {
+  const base = answerToGoOn();
+  if (base && useStreamStore.getState().isRunning(base.requestId)) {
+    // Still being written: let it finish (it is short), else stop it where it is, kept.
+    await Promise.race([base.done, new Promise((resolve) => setTimeout(resolve, DRAFT_FINISH_WAIT_MS))]);
+    if (useStreamStore.getState().isRunning(base.requestId)) await haltAutoAnswer(base);
+  }
   const store = useQuestionStore.getState();
   if (answerRunning()) {
     store.holdBack(segmentId, question.text);
@@ -227,19 +364,48 @@ function startAutoAnswer(question: DetectedQuestion, segmentId: string | undefin
   }
   if (segmentId !== undefined) store.answerLine(question, segmentId);
   const requestId = crypto.randomUUID();
-  // "Do you have any questions for us?": suggest questions to ask, not an answer.
-  const mode = isClosingQuestion(question.text)
-    ? "FollowUp"
-    : useAIActionsStore.getState().configs.globalDefaults.autoAnswerMode ?? "Assist";
-  const done = runUserAction(mode, question.text, { requestId }).catch((err) => {
+  const stream = useStreamStore.getState();
+  /** Once it settles: if it found nothing to add or answer, the line is no card to click. */
+  const settle = (asked: Promise<void>) => asked.then(() => {
+    if (!answeredNothing(requestId)) return;
+    logAutoAnswer("notAsked");
+    const now = useQuestionStore.getState();
+    if (question.unsure && segmentId !== undefined) now.dismissLine(segmentId);
+    if (now.autoAnswer?.requestId === requestId) now.setAutoAnswer(base ? { ...base, done: Promise.resolve() } : null);
+  });
+  const refused = (err: unknown) => {
     // Refused: an answer started elsewhere in the meantime.
     if (!String(err).includes(REFUSED)) return;
     const now = useQuestionStore.getState();
     now.holdBack(segmentId, question.text);
     if (now.autoAnswer?.requestId === requestId) now.setAutoAnswer(null);
     logAutoAnswer("held");
-  });
-  if (segmentId !== undefined) store.setAutoAnswer({ requestId, segmentId, question: question.text, early, done });
+  };
+
+  // An answer is on screen for what they said just before: go on from it,
+  // rewrite it only if they asked something clearly else.
+  // (Its text, even when it was stopped before it was kept in History.)
+  const onScreen = base && !stream.error ? stream.currentContent : "";
+  if (base && onScreen.trim()) {
+    stream.markContinuation(requestId);
+    const request = base.draft ? continuationRequest(question.text, onScreen) : followOnRequest(question.text, onScreen);
+    const done = settle(runUserAction(autoMode(question.text), request, { requestId }).catch(refused));
+    // The window runs from the first answer: a long exchange gets fresh answers again.
+    if (segmentId !== undefined) store.setAutoAnswer({ requestId, segmentId, question: question.text, early, startedAt: base.startedAt, done });
+    logAutoAnswer(base.draft ? "continued" : "followOn", detail);
+    return;
+  }
+
+  if (question.unsure) {
+    // The AI judges: an answer if something was asked, else the screen stays.
+    stream.markTentative(requestId);
+    const done = settle(runUserAction(autoMode(question.text), unsureRequest(question.text), { requestId }).catch(refused));
+    if (segmentId !== undefined) store.setAutoAnswer({ requestId, segmentId, question: question.text, early, tentative: true, startedAt: Date.now(), done });
+    logAutoAnswer("unsure", detail);
+    return;
+  }
+  const done = runUserAction(autoMode(question.text), question.text, { requestId }).catch(refused);
+  if (segmentId !== undefined) store.setAutoAnswer({ requestId, segmentId, question: question.text, early, startedAt: Date.now(), done });
   logAutoAnswer(early ? "early" : "answered", detail);
 }
 
@@ -258,8 +424,11 @@ async function onTurnSignal(seg: TranscriptSegment, signalAt: number) {
     logAutoAnswer("kept");
     return;
   }
-  // The early answer was premature: it gives way.
-  if (current && (step.kind === "withdraw" || step.replaces)) {
+  // The question grew after the early answer: it stays, and the answer goes on from it.
+  if (current && step.kind === "answer" && step.replaces) {
+    await keepToContinue(current);
+  } else if (current && (step.kind === "withdraw" || step.replaces)) {
+    // The early answer was premature: it gives way.
     store.setAutoAnswer(null);
     if (step.kind === "withdraw") store.holdBack(seg.id, current.question);
     logAutoAnswer("withdrawn");
@@ -267,7 +436,7 @@ async function onTurnSignal(seg: TranscriptSegment, signalAt: number) {
   }
   if (step.kind === "answer") {
     const q = { text: step.question, confidence: 0.9, timestamp_ms: seg.timestamp_ms, source: seg.speaker };
-    startAutoAnswer(q, seg.id, step.early, `${seg.turn}, ${Date.now() - signalAt} ms after the signal`);
+    await startAutoAnswer(q, seg.id, step.early, `${seg.turn}, ${Date.now() - signalAt} ms after the signal`);
   }
 }
 
@@ -334,18 +503,31 @@ export function QuestionDetector() {
       if (!seg.is_final || !checkLine(seg.id, seg.text)) continue;
       if (!isOtherParty(seg.speaker)) continue;
       const sentence = whatToAnswer(seg.text, everyTurn);
+      // No question by the rules, but they said something: the AI judges.
+      if (!sentence && autoTrigger && judgesUnclear() && !isSpeakingAnswer() && !store.isTurnLine(seg.id)) {
+        const said = whatToAnswer(seg.text, true);
+        if (said) addQuestion({ text: said, confidence: 0.5, timestamp_ms: seg.timestamp_ms, source: seg.speaker, unsure: true }, seg.id);
+      }
       // While NexQ reads an answer aloud, the other party's channel hears it too.
       if (sentence && !isSpeakingAnswer()) {
         addQuestion({ text: sentence, confidence: 0.8, timestamp_ms: seg.timestamp_ms, source: seg.speaker }, seg.id);
         // The line grew into another question after Auto-Answer answered it:
-        // that answer was for an incomplete question and gives way. (Lines
+        // that answer stops but stays on screen, and the answer to the whole
+        // question goes on from it (or starts over, if it misread). (Lines
         // with turn signals are handled on those signals.)
         const ref = store.autoAnswer;
-        if (autoTrigger && ref && ref.segmentId === seg.id && !sameQuestion(ref.question, sentence) && !store.isTurnLine(seg.id)) {
-          store.setAutoAnswer(null);
+        // "Oui", "d'accord" or a corrected word isn't another question: the
+        // answer on screen stays.
+        // A draft is meant to grow with its question: its rest comes after.
+        if (autoTrigger && ref && !ref.draft && ref.segmentId === seg.id && !samePoint(ref.question, sentence) && !store.isTurnLine(seg.id)) {
           store.reviseLine(seg.id, sentence);
-          logAutoAnswer("withdrawn");
-          void inTurn(() => stopAutoAnswer(ref));
+          if (ref.tentative) {
+            // It was judged as maybe asking nothing: the real question gets its own answer.
+            store.setAutoAnswer(null);
+            void inTurn(() => stopAutoAnswer(ref));
+          } else {
+            void inTurn(() => keepToContinue(ref));
+          }
         }
       }
     }
@@ -387,8 +569,29 @@ export function QuestionDetector() {
     const q = useQuestionStore.getState().questions[0];
     if (!q || q.assisted || q.heldBack) return;
     useQuestionStore.getState().markAssisted(0);
-    startAutoAnswer(q, q.segmentId, false, "after the quiet wait");
+    return startAutoAnswer(q, q.segmentId, false, "after the quiet wait");
   }, []);
+
+  // A first draft while the question is still being asked: once its newest
+  // words look like a question of DRAFT_MIN_WORDS words or more, once per
+  // line. (Lines with turn signals are answered early on those instead.)
+  const draftedLines = useRef(new Set<string>());
+  const drafts = useAIActionsStore((s) => s.configs.globalDefaults.autoAnswerDraft ?? true);
+  useEffect(() => {
+    if (!autoTrigger || !drafts || !otherPartyActivity) return;
+    const segs = useTranscriptStore.getState().segments;
+    let seg: TranscriptSegment | undefined;
+    for (let i = segs.length - 1; i >= 0 && !seg; i--) if (isOtherParty(segs[i].speaker)) seg = segs[i];
+    if (!seg || draftedLines.current.has(seg.id)) return;
+    const line = seg.id;
+    const store = useQuestionStore.getState();
+    if (store.isTurnLine(line) || store.autoAnswer?.segmentId === line) return;
+    if (store.questions.some((q) => q.segmentId === line && q.assisted)) return;
+    const question = whatToAnswer(seg.text, false);
+    if (!question || isClosingQuestion(question) || question.split(/\s+/u).filter(Boolean).length < DRAFT_MIN_WORDS) return;
+    draftedLines.current.add(line);
+    void inTurn(() => startDraft(question, line));
+  }, [otherPartyActivity, autoTrigger, drafts]);
   useEffect(() => {
     if (!waiting) return;
     const timer = setTimeout(() => void inTurn(autoAssist), quietWait(latest?.text ?? ""));

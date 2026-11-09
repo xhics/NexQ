@@ -217,6 +217,20 @@ fn is_cjk_question(sentence: &str) -> bool {
             && !CHINESE_NON_QUESTION_PHRASES.iter().any(|phrase| body.contains(phrase)))
 }
 
+/// Asking for more on the answer given ("précise", "conclus"); mirrors FRENCH_CLAUSE_STARTERS in QuestionDetector.tsx.
+const FRENCH_FOLLOW_UP_STARTERS: &[&str] = &[
+    "précise", "précisez", "détaille", "détaillez", "développe", "développez", "illustre", "illustrez",
+    "conclus", "concluez", "résume", "résumez", "approfondis", "approfondissez",
+];
+/// Spoken yes/no questions at a clause's start ("tu peux être plus précis");
+/// mirrors FRENCH_CLAUSE_OPENERS in QuestionDetector.tsx.
+const FRENCH_CLAUSE_OPENERS: &[&str] = &[
+    "tu peux", "tu pourrais", "tu pourras", "vous pouvez", "vous pourriez", "tu as déjà", "t'as déjà", "vous avez déjà",
+    "tu aurais", "vous auriez", "tu connais", "vous connaissez", "tu ferais", "vous feriez", "tu saurais", "vous sauriez",
+    "tu veux bien", "vous voulez bien", "tu te souviens", "vous vous souvenez", "tu es déjà", "vous êtes déjà",
+    "prends le temps", "prenez le temps",
+];
+
 /// Whether a clause asks: its first word after openers, or "quel…" about you.
 fn french_clause_asks(clause: &str, first: bool) -> bool {
     let mut words: Vec<&str> = clause.split_whitespace().collect();
@@ -224,7 +238,14 @@ fn french_clause_asks(clause: &str, first: bool) -> bool {
         words.remove(0);
     }
     let head = words.first().copied().unwrap_or("");
-    if FRENCH_CLAUSE_STARTERS.contains(&head) || (first && FRENCH_FIRST_WORD_STARTERS.contains(&head)) {
+    if FRENCH_CLAUSE_STARTERS.contains(&head)
+        || FRENCH_FOLLOW_UP_STARTERS.contains(&head)
+        || (first && FRENCH_FIRST_WORD_STARTERS.contains(&head))
+    {
+        return true;
+    }
+    let opening = words.join(" ");
+    if FRENCH_CLAUSE_OPENERS.iter().any(|o| opening == *o || opening.starts_with(&format!("{o} "))) {
         return true;
     }
     if FRENCH_QUEL.contains(&head) {
@@ -237,6 +258,36 @@ fn french_clause_asks(clause: &str, first: bool) -> bool {
         return about_you || defining;
     }
     false
+}
+
+/// Ask at the end of a spoken question: "tu fais quoi", "vous feriez comment".
+const FRENCH_END_WORDS: &[&str] = &["quoi", "comment", "pourquoi", "combien", "quand", "où", "lequel", "laquelle", "lesquels", "lesquelles"];
+const FRENCH_END_SUBJECTS: &[&str] = &["tu", "t'", "toi", "vous", "on", "c'est", "ça", "ca", "cela"];
+/// Acknowledgements the transcriber glues after the question ("…tu fais quoi oui").
+const FRENCH_TRAILING_TAGS: &[&str] = &["oui", "ouais", "ok", "okay", "d'accord", "hein", "bon", "voilà", "alors", "euh", "là", "donc", "exactement"];
+
+/// "…mais que les coûts dépassent le budget, tu fais quoi (oui)": the asking
+/// word comes last, after who is asked. Mirrors `frenchEndAsks` in QuestionDetector.tsx.
+fn french_end_asks(text: &str) -> bool {
+    let mut words: Vec<&str> = text
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':' | '.' | '!' | '…'))
+        .filter(|w| !w.is_empty())
+        .collect();
+    while words.last().is_some_and(|w| FRENCH_TRAILING_TAGS.contains(w)) {
+        words.pop();
+    }
+    let n = words.len();
+    if n < 3 || !FRENCH_END_WORDS.contains(&words[n - 1]) {
+        return false;
+    }
+    let before = &words[n.saturating_sub(5)..n - 1];
+    // Not "je t'explique comment": you telling, not them asking.
+    if before.iter().any(|w| *w == "je" || w.starts_with("j'")) {
+        return false;
+    }
+    before
+        .iter()
+        .any(|w| FRENCH_END_SUBJECTS.contains(w) || w.starts_with("t'") || w.starts_with("c'"))
 }
 
 /// French question words for a sentence without a question mark.
@@ -252,6 +303,7 @@ fn is_french_question(sentence: &str) -> bool {
             })
     });
     inverted
+        || french_end_asks(text)
         || FRENCH_PATTERNS.iter().any(|pattern| text.contains(pattern))
         || text
             .split([',', ';', ':'])
@@ -423,5 +475,17 @@ mod tests {
         ] {
             assert!(QuestionDetector::new().detect_questions(text, 0, "Them").is_empty(), "{text}");
         }
+    }
+
+    #[test]
+    fn french_question_with_the_asking_word_last() {
+        assert!(is_french_question("Et si les tests montrent que le système tient, mais que les coûts dépassent le budget, tu fais quoi"));
+        assert!(is_french_question("mais que les coûts dépassent le budget, tu fais quoi Oui,"));
+        assert!(is_french_question("Le circuit breaker, c'est quoi"));
+        assert!(!is_french_question("Je t'explique comment"));
+        assert!(!is_french_question("Voilà comment"));
+        assert!(is_french_question("Et côté résultats mesurables, tu peux être plus précis"));
+        assert!(is_french_question("Prends le temps de conclure avec un ou deux résultats chiffrés et"));
+        assert!(!is_french_question("Tu expliques bien le contexte, l'échec et les leçons."));
     }
 }
