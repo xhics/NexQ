@@ -80,9 +80,10 @@ it("while you speak, moves on only past what you have said", () => {
   expect(el.scrollTop).toBe(0); // nothing said yet: it doesn't run ahead of you
 
   saidBottom = 200; // you said the first lines (they turned yellow)
-  advance(3000);
-  expect(el.scrollTop).toBeGreaterThan(150);
-  expect(el.scrollTop).toBeLessThanOrEqual(200);
+  advance(5000);
+  // Glides there, the last line said kept in view about the middle of the box.
+  expect(el.scrollTop).toBeGreaterThan(120);
+  expect(el.scrollTop).toBeLessThanOrEqual(200 - 55);
   const at = el.scrollTop;
   advance(3000);
   expect(el.scrollTop).toBe(at); // and waits there for what you say next
@@ -111,10 +112,38 @@ it("while you speak in your own words, moves on as far as you have said, from wh
   advance(2000);
   expect(box.scrollTop).toBe(0);
 
-  said = 24; // 20 counted: word 20 is at 400 px, shown 30 px down the box
-  advance(5000);
+  said = 24; // 20 counted: word 20 is at 400 px, shown 45 px down the box
+  advance(10000);
   expect(box.scrollTop).toBeGreaterThan(300);
-  expect(box.scrollTop).toBeLessThanOrEqual(400 - 30);
+  expect(box.scrollTop).toBeLessThanOrEqual(400 - 45);
+  box.remove();
+  proto.getBoundingClientRect = had;
+});
+
+it("doesn't jump past what you are reading when a part further down is taken for said", () => {
+  // 40 words, one per 20 px line, in a 100 px box; a mark wrongly at 700 px.
+  const box = document.createElement("div");
+  box.textContent = Array.from({ length: 40 }, (_, i) => `mot${i}`).join(" ");
+  const mark = document.createElement("span");
+  mark.setAttribute("data-said", "1");
+  mark.getBoundingClientRect = () => ({ bottom: 700 - box.scrollTop }) as DOMRect;
+  box.appendChild(mark);
+  document.body.appendChild(box);
+  Object.defineProperty(box, "scrollHeight", { value: 800 });
+  Object.defineProperty(box, "clientHeight", { value: 100 });
+  box.getBoundingClientRect = () => ({ top: -box.scrollTop }) as DOMRect;
+  const lineOf = (offset: number) => box.firstChild!.textContent!.slice(0, offset).split(" ").length - 1;
+  const proto = Range.prototype as { getBoundingClientRect?: () => DOMRect };
+  const had = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function (this: Range) {
+    return { top: lineOf(this.startOffset) * 20 - box.scrollTop } as DOMRect;
+  };
+  renderHook(() =>
+    useReadingScroll({ current: box }, box.textContent!, "a", 20, { otherQuiet: () => true, youQuiet: () => false, wordsSaid: () => 10 }),
+  );
+  advance(20000);
+  // 10 words said: at most 21 words in (420 px), not the mark at 700 px.
+  expect(box.scrollTop).toBeLessThanOrEqual(420);
   box.remove();
   proto.getBoundingClientRect = had;
 });

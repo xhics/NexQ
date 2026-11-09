@@ -67,7 +67,7 @@ impl Default for DeepgramConfig {
             model: "nova-3".to_string(),
             smart_format: false,
             interim_results: true,
-            endpointing: Some(300),
+            endpointing: Some(200),
             punctuate: true,
             diarize: true,
             profanity_filter: false,

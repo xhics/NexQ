@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BookOpen, ChevronDown, ChevronRight, Loader2, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
-import { generateStories, styleBlockOf, styleEdits, useStoryStore, withStyleBlock, type StarStory } from "../stores/storyStore";
+import { generateStories, jobBlockOf, styleBlockOf, styleEdits, useStoryStore, withJobBlock, withStyleBlock, type StarStory } from "../stores/storyStore";
 import { useAIActionsStore } from "../stores/aiActionsStore";
 import { learnStyle } from "../lib/ipc";
 import { showToast } from "../stores/toastStore";
@@ -17,7 +17,11 @@ const field =
 export function StoriesSettings() {
   const stories = useStoryStore((s) => s.stories);
   const setStories = useStoryStore((s) => s.setStories);
-  const [job, setJob] = useState("");
+  const instructions = useAIActionsStore((s) => s.configs.customInstructions);
+  const setInstructions = useAIActionsStore((s) => s.setCustomInstructions);
+  // The job applied for, once set: every answer is aimed at it.
+  const savedJob = jobBlockOf(instructions);
+  const [job, setJob] = useState(savedJob);
   const [language, setLanguage] = useState("French");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +65,7 @@ export function StoriesSettings() {
 
       <div className="space-y-2 rounded-xl border border-border/20 bg-card/20 p-3">
         <label className="text-xs font-medium text-muted-foreground" htmlFor="story-job">
-          The job (optional): paste the offer to aim the stories at it
+          The job applied for: paste the offer to aim the stories and every live answer at it
         </label>
         <textarea
           id="story-job"
@@ -70,6 +74,22 @@ export function StoriesSettings() {
           onChange={(e) => setJob(e.target.value)}
           placeholder="Architecte GenAI / hyperautomatisation chez…"
         />
+        <div className="flex items-center gap-2 text-[11px]">
+          {job.trim() !== savedJob ? (
+            <button
+              type="button"
+              onClick={() => {
+                setInstructions(withJobBlock(instructions, job));
+                showToast(job.trim() ? "Every answer is now aimed at this job" : "The job was removed from the AI's instructions", "success");
+              }}
+              className="rounded-lg bg-primary/15 px-3 py-1 font-semibold text-primary hover:bg-primary/25"
+            >
+              {job.trim() ? "Aim every answer at this job" : "Remove the job from the answers"}
+            </button>
+          ) : (
+            savedJob && <span className="text-success">Every answer is aimed at this job</span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <div className="flex overflow-hidden rounded-md border border-border/30" role="radiogroup" aria-label="Language of the stories">
             {LANGUAGES.map((l) => (

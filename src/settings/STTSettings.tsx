@@ -194,7 +194,7 @@ const DEEPGRAM_PRESETS: DeepgramPreset[] = [
     description: "Balanced settings for most meetings",
     config: {
       model: "nova-3", smart_format: false, interim_results: true,
-      endpointing: 300, punctuate: true, diarize: true,
+      endpointing: 200, punctuate: true, diarize: true,
       profanity_filter: false, numerals: false, dictation: false,
       vad_events: true, keyterms: [],
     },
@@ -1125,7 +1125,7 @@ function DeepgramAdvancedSettings() {
             <code className="ml-2 text-meta text-muted-foreground/60">endpointing=NUMBER</code>
           </div>
           <button
-            onClick={() => updateField("endpointing", deepgramConfig.endpointing === null ? 300 : null)}
+            onClick={() => updateField("endpointing", deepgramConfig.endpointing === null ? 200 : null)}
             className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${
               deepgramConfig.endpointing !== null ? "bg-primary" : "bg-muted"
             }`}

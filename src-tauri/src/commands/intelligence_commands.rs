@@ -28,16 +28,31 @@ const CUE_CARD_INSTRUCTION: &str = "Start your answer with one line that begins 
 /// An answer read during the meeting, while the user speaks: short and to
 /// the point, whatever the saved action prompt says (saved prompts don't
 /// follow later default changes).
-const LIVE_BREVITY_INSTRUCTION: &str = "Keep the answer short and to the point, laid out as said below. No title, no introduction, no conclusion, and don't restate the question.";
+const LIVE_BREVITY_INSTRUCTION: &str = "Keep the answer to the point, laid out as said below, with enough context to stand on its own: the why, the setting or a concrete example from the user's background. No title, no introduction, no conclusion, and don't restate the question.";
+
+/// The newest question, not one the transcript shows was asked before.
+const QUESTION_FOCUS_INSTRUCTION: &str = "Answer the newest thing the interviewer asked, the question given above, and only it. The transcript shows earlier questions and what the user already said about them: those are answered, never answer them again and don't go on with the user's previous answer, even if the new question looks like it.";
+
+/// The user's own experience, from the attached documents.
+const EXPERIENCE_INSTRUCTION: &str = "Build the answer on the user's own experience from the reference materials (CV, projects): pick the project or role that best fits this question, name it with its context (organisation, stakes, the user's exact role), and use its real facts, tools and figures. Don't reuse the project of the previous answer unless it is clearly the best fit. Never invent a project, an employer or a title.";
+
+/// The user's wording: precise technical terms, abbreviations spelt out once.
+const TECHNICAL_INSTRUCTION: &str = "Use the professional vocabulary of the field throughout: in every answer at least 3 precise technical terms (tools, methods, architectures, standards, frameworks) and at least 2 abbreviations or acronyms of the trade, rather than plain words. Write each abbreviation followed by its full term in parentheses the first time it appears, e.g. \"CI/CD (Continuous Integration / Continuous Delivery)\", \"SLA (Service Level Agreement)\".";
+
+/// Concrete figures; the ones not taken from the user's documents are flagged in the notes.
+const FIGURES_INSTRUCTION: &str = "Put 2 or 3 concrete figures in every answer: percentages, volumes, durations, team sizes, budgets, delays, SLAs. Take them from the user's documents and stories first. When none fits, give a realistic figure for that kind of project and role, and write it in the notes as \"≈ <figure> estimé\" so the user knows to adjust it.";
+
+/// Said aloud by a person, not read from a page.
+const HUMAN_INSTRUCTION: &str = "Write it the way the user would say it out loud in the interview, not like a written text: first person, natural spoken sentences of varied length, simple links between ideas (\"concrètement\", \"du coup\", \"ce qui a permis de\", \"en pratique\", each at most once), a personal touch (what the user chose, noticed or learnt). No stiff written phrasing, no strings of buzzwords, no formulas like \"il est essentiel de\" or \"en conclusion\". Bullet points too read as short spoken phrases.";
 
 /// Layouts the user picks for live answers (the compact box's Points / Story).
-const POINTS_INSTRUCTION: &str = "Lay the answer out as 3 or 4 bullet points, each under 12 words, about 50 words in all: the direct answer first.";
-const STORY_INSTRUCTION: &str = "Lay the answer out as a short story told in the first person, in 3 or 4 spoken sentences: the situation, what the user did, the result (a figure if one is known), about 80 words. No bullet points.";
-const AUTO_STYLE_INSTRUCTION: &str = "Choose the layout by the question. A direct question (a fact, a definition, an opinion, a choice, how something works): 3 or 4 bullet points, each under 12 words, the direct answer first. A question asking to tell an experience or a time when, or to walk through a situation or a scenario (\"tell me about a time\", \"raconte\", \"parle-moi d'une fois\", \"décris une situation\", \"que ferais-tu si\"): a short first-person story in 3 or 4 spoken sentences (the situation, what the user did, the result), about 80 words, no bullet points.";
+const POINTS_INSTRUCTION: &str = "Lay the answer out as 4 or 5 bullet points, each under 22 words, about 100 words in all: the direct answer first, then the why, how it is done and a concrete example.";
+const STORY_INSTRUCTION: &str = "Lay the answer out as a story told in the first person, in 5 or 6 spoken sentences: the context and the stakes, what the user did and why, the result (a figure if one is known), about 130 words. No bullet points.";
+const AUTO_STYLE_INSTRUCTION: &str = "Choose the layout by the question. A direct question (a fact, a definition, an opinion, a choice, how something works): 4 or 5 bullet points, each under 22 words, the direct answer first, then the why, how it is done and a concrete example, about 100 words. A question asking to tell an experience or a time when, or to walk through a situation or a scenario (\"tell me about a time\", \"raconte\", \"parle-moi d'une fois\", \"décris une situation\", \"que ferais-tu si\"): a first-person story in 5 or 6 spoken sentences (the context and the stakes, what the user did and why, the result), about 130 words, no bullet points.";
 
 /// Notes for the user's eyes beside the answer; the overlay splits them off
 /// at this line (NOTES_MARK in src/lib/answerNotes.ts).
-const NOTES_INSTRUCTION: &str = "After the answer, write a line with only ---NOTES--- on it, then 2 or 3 very short notes for the user's eyes only, not to say aloud: a figure, a name or a technical term worth mentioning, each on a line starting with '- ', 1 to 4 words, no sentence. Nothing after the notes.";
+const NOTES_INSTRUCTION: &str = "After the answer, write a line with only ---NOTES--- on it, then 2 or 3 very short notes for the user's eyes only, not to say aloud: a figure, a name or a technical term worth mentioning, or an estimated figure to adjust, each on a line starting with '- ', 1 to 5 words, no sentence. Nothing after the notes.";
 
 /// `prompt`, with the brevity rule for the answers read live (Assist, Say),
 /// laid out as `style` says ("points", "story", else chosen by question),
@@ -49,7 +64,7 @@ pub(crate) fn with_live_brevity(prompt: String, mode: &str, live: bool, style: O
             Some("story") => STORY_INSTRUCTION,
             _ => AUTO_STYLE_INSTRUCTION,
         };
-        format!("{prompt}\n\n{LIVE_BREVITY_INSTRUCTION}\n{layout}\n{NOTES_INSTRUCTION}")
+        format!("{prompt}\n\n{QUESTION_FOCUS_INSTRUCTION}\n{LIVE_BREVITY_INSTRUCTION}\n{layout}\n{EXPERIENCE_INSTRUCTION}\n{HUMAN_INSTRUCTION}\n{TECHNICAL_INSTRUCTION}\n{FIGURES_INSTRUCTION}\n{NOTES_INSTRUCTION}")
     } else {
         prompt
     }
@@ -301,6 +316,21 @@ async fn retrieve_rag(
 /// Most document text sent per request when RAG retrieval finds nothing
 /// (~8k tokens): stateless providers resend it on every request.
 const DOC_FALLBACK_CHARS: usize = 32_000;
+
+/// Attached documents up to this size are sent whole instead of searched
+/// (~20k tokens): a CV and a file of projects, all their facts in reach.
+const WHOLE_DOCUMENTS_CHARS: usize = 80_000;
+
+/// The attached documents' whole text when it is no more than
+/// [`WHOLE_DOCUMENTS_CHARS`]; None when nothing is attached or it is larger.
+fn whole_documents(state: &AppState) -> Option<String> {
+    let text = state.context.as_ref()?.lock().ok()?.get_resources_context();
+    fits_whole(text)
+}
+
+fn fits_whole(text: String) -> Option<String> {
+    (!text.trim().is_empty() && text.chars().count() <= WHOLE_DOCUMENTS_CHARS).then_some(text)
+}
 
 /// The attached documents' text, capped at [`DOC_FALLBACK_CHARS`]; None when
 /// nothing is attached.
@@ -1043,7 +1073,18 @@ pub async fn generate_assist(
     // toggle is the user's intent. If they enabled RAG for this action and have
     // indexed files, we should search. (config.enabled defaults to false and is
     // inconsistently set, while Test Knowledge Base ignores it entirely.)
-    let mut rag = if include_rag && active_cache_name.is_none() {
+    // Documents small enough go in whole (a CV, a file of projects): every
+    // project and figure is there, not a few passages a search picked, and
+    // no embedding round trip delays the answer. The same text each time,
+    // so the provider's prompt cache keeps it cheap.
+    let whole_documents = if include_rag && active_cache_name.is_none() {
+        whole_documents(&state)
+    } else {
+        None
+    };
+    let mut rag = if let Some(docs) = whole_documents {
+        RagRetrieval { context_text: docs, ..RagRetrieval::default() }
+    } else if include_rag && active_cache_name.is_none() {
         // RAG query sources (priority: custom_question > effective_question > transcript)
         // custom_question is what the user typed (Ask mode) or the clicked question (Assist mode)
         // effective_question is the auto-detected question from the meeting
@@ -1349,6 +1390,13 @@ mod tests {
     }
 
     #[test]
+    fn small_documents_go_whole() {
+        assert_eq!(fits_whole("## CV\nArchitecte".to_string()).as_deref(), Some("## CV\nArchitecte"));
+        assert_eq!(fits_whole("  ".to_string()), None);
+        assert_eq!(fits_whole("a".repeat(WHOLE_DOCUMENTS_CHARS + 1)), None);
+    }
+
+    #[test]
     fn document_fallback_is_capped() {
         assert_eq!(cap_document_text("  
 ", 10), None);
@@ -1356,13 +1404,19 @@ mod tests {
     }
 
     #[test]
-    fn live_answers_are_kept_short() {
+    fn live_answers_are_to_the_point_with_context() {
         let p = with_live_brevity("Base.".to_string(), "Assist", true, None);
-        assert!(p.starts_with("Base.") && p.contains("short and to the point") && p.contains("Choose the layout"));
+        assert!(p.starts_with("Base.") && p.contains("to the point") && p.contains("enough context") && p.contains("Choose the layout"));
+        // Technical terms, abbreviations spelt out in parentheses.
+        assert!(p.contains("technical terms") && p.contains("full term in parentheses"));
+        // Spoken like a person, with figures (estimated ones flagged in the notes).
+        assert!(p.contains("say it out loud") && p.contains("concrete figures") && p.contains("estimé"));
+        // The newest question, from the user's own projects.
+        assert!(p.contains("never answer them again") && p.contains("user's own experience"));
         let points = with_live_brevity("Base.".to_string(), "WhatToSay", true, Some("points"));
-        assert!(points.contains("bullet points, each under 12 words") && !points.contains("story"));
+        assert!(points.contains("bullet points, each under 22 words") && !points.contains("story"));
         let story = with_live_brevity("Base.".to_string(), "Assist", true, Some("story"));
-        assert!(story.contains("short story told in the first person") && story.contains("No bullet points"));
+        assert!(story.contains("story told in the first person, in 5 or 6") && story.contains("No bullet points"));
         assert!(story.contains("---NOTES---"));
         // Not for other actions, nor for questions about a past meeting.
         assert_eq!(with_live_brevity("Base.".to_string(), "Recap", true, Some("story")), "Base.");

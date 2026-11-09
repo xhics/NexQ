@@ -140,6 +140,16 @@ export function answeredNothing(requestId: string): boolean {
 }
 
 /**
+ * Whether `requestId` is a tentative answer still judging whether anything
+ * was asked: running, and none of its own words on screen yet.
+ */
+export function stillJudging(requestId: string): boolean {
+  const s = useStreamStore.getState();
+  if (!s.isRunning(requestId) || !continuations.get(requestId)?.tentative) return false;
+  return s.streamRequestId !== requestId || visible(s._rawContent, requestId).held;
+}
+
+/**
  * A continuation that starts with this line found the answer's start had
  * misread the question: what follows replaces the whole answer.
  */

@@ -52,6 +52,8 @@ Indexing is fully asynchronous -- progress events (`rag_index_progress`) update 
 
 ## How Search Works
 
+When all your documents together are small (up to about 80,000 characters, around 20,000 tokens: a CV and a file of projects), NexQ sends them whole with every answer instead of searching them. Every project and figure is then in reach, and no search delays the answer. Larger sets of documents are searched as below.
+
 When the AI needs context during a meeting, NexQ searches your indexed documents using hybrid search:
 
 - **Vector similarity search** -- finds chunks with meaning similar to the current conversation

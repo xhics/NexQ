@@ -6,7 +6,7 @@ vi.mock("./ipc", async (importOriginal) => ({
 }));
 vi.mock("./userAction", () => ({ runUserAction: vi.fn(() => Promise.resolve()) }));
 
-import { decideTurnStep, makeWayForYou, runYourAction } from "./autoAnswer";
+import { decideTurnStep, makeWayForYou, runYourAction, looksComplete } from "./autoAnswer";
 import { cancelGeneration } from "./ipc";
 import { runUserAction } from "./userAction";
 import { useQuestionStore, type AutoAnswerRef } from "../stores/questionStore";
@@ -28,18 +28,24 @@ describe("decideTurnStep", () => {
   });
 
   it("answers early on 'probably done'", () => {
-    expect(decideTurnStep("eager_end", "line", "What would you do?", null))
-      .toEqual({ kind: "answer", question: "What would you do?", early: true, replaces: false });
+    expect(decideTurnStep("eager_end", "line", "What would you do after an outage?", null))
+      .toEqual({ kind: "answer", question: "What would you do after an outage?", early: true, replaces: false });
   });
 
-  it("does nothing for a line without a question", () => {
+  it("waits for the end of a question cut short", () => {
+    expect(decideTurnStep("eager_end", "line", "Raconte-moi une décision", null)).toEqual({ kind: "none" });
+    expect(decideTurnStep("eager_end", "line", "What would you do?", null)).toEqual({ kind: "none" });
+    expect(looksComplete("Raconte-moi une décision d'architecture où tu as renoncé à une option")).toBe(true);
+  });
+
+  it("leaves a line without a question to the AI to judge, once the turn ends", () => {
     expect(decideTurnStep("eager_end", "line", null, null)).toEqual({ kind: "none" });
-    expect(decideTurnStep("end", "line", null, null)).toEqual({ kind: "none" });
+    expect(decideTurnStep("end", "line", null, null)).toEqual({ kind: "judge" });
     expect(decideTurnStep("resumed", "line", null, null)).toEqual({ kind: "none" });
   });
 
-  it("withdraws the early answer when the speaker keeps talking", () => {
-    expect(decideTurnStep("resumed", "line", "What would you do?", ref())).toEqual({ kind: "withdraw" });
+  it("lets the early answer go on when the speaker keeps talking", () => {
+    expect(decideTurnStep("resumed", "line", "What would you do?", ref())).toEqual({ kind: "none" });
   });
 
   it("keeps the early answer when the turn ends with the same question", () => {
@@ -58,13 +64,13 @@ describe("decideTurnStep", () => {
       .toEqual({ kind: "answer", question: "What would you do if the build broke?", early: false, replaces: true });
   });
 
-  it("withdraws the early answer when the turn ends without a question", () => {
-    expect(decideTurnStep("end", "line", null, ref())).toEqual({ kind: "withdraw" });
+  it("keeps the early answer and lets the AI judge what followed when the turn ends without a question", () => {
+    expect(decideTurnStep("end", "line", null, ref())).toEqual({ kind: "judge" });
   });
 
   it("starts a new early answer when the question grows before the turn ends", () => {
-    expect(decideTurnStep("eager_end", "line", "What would you do first?", ref()))
-      .toEqual({ kind: "answer", question: "What would you do first?", early: true, replaces: true });
+    expect(decideTurnStep("eager_end", "line", "What would you do first after an outage?", ref()))
+      .toEqual({ kind: "answer", question: "What would you do first after an outage?", early: true, replaces: true });
     expect(decideTurnStep("eager_end", "line", "What would you do?", ref())).toEqual({ kind: "none" });
   });
 

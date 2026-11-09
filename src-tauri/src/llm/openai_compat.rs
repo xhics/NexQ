@@ -165,6 +165,12 @@ impl LLMProvider for OpenAICompatClient {
         if let Some(max_tok) = params.max_tokens {
             body["max_tokens"] = json!(max_tok);
         }
+        // OpenAI reports the tokens it read and how many came from its prompt
+        // cache in a last chunk: logged, to see whether the cache holds.
+        let reports_usage = self.config.provider_name == "openai";
+        if reports_usage {
+            body["stream_options"] = json!({ "include_usage": true });
+        }
 
         let request = self
             .apply_auth(self.client.post(&url))
@@ -213,6 +219,9 @@ impl LLMProvider for OpenAICompatClient {
                 for event in events {
                     match event {
                         Some(data) => {
+                            if reports_usage {
+                                log_usage(&data, model);
+                            }
                             if let Some(token) = SSEParser::extract_openai_token(&data) {
                                 if !token.is_empty() {
                                     token_count += 1;
@@ -307,4 +316,38 @@ pub fn create_lm_studio_client(base_url: Option<&str>) -> OpenAICompatClient {
         auth_value: None,
         extra_headers: vec![],
     })
+}
+
+/// Logs a chunk's usage report, if it carries one: prompt tokens, how many
+/// came from the prompt cache, and the answer's tokens.
+fn log_usage(data: &serde_json::Value, model: &str) {
+    if let Some(line) = usage_line(data) {
+        log::info!("{model} usage: {line}");
+    }
+}
+
+fn usage_line(data: &serde_json::Value) -> Option<String> {
+    let usage = data.get("usage").filter(|u| !u.is_null())?;
+    let prompt = usage.get("prompt_tokens")?.as_u64()?;
+    let cached = usage
+        .pointer("/prompt_tokens_details/cached_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let completion = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+    let share = if prompt > 0 { cached * 100 / prompt } else { 0 };
+    Some(format!("prompt {prompt} tokens ({cached} cached, {share} %), answer {completion} tokens"))
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::usage_line;
+    use serde_json::json;
+
+    #[test]
+    fn reads_the_cached_share_of_the_prompt() {
+        let data = json!({ "choices": [], "usage": { "prompt_tokens": 16000, "completion_tokens": 180, "prompt_tokens_details": { "cached_tokens": 15360 } } });
+        assert_eq!(usage_line(&data).as_deref(), Some("prompt 16000 tokens (15360 cached, 96 %), answer 180 tokens"));
+        assert_eq!(usage_line(&json!({ "choices": [{ "delta": { "content": "a" } }] })), None);
+        assert_eq!(usage_line(&json!({ "usage": null })), None);
+    }
 }

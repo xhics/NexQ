@@ -41,7 +41,7 @@ export function splitNotes(content: string): { answer: string; notes: string[] }
 }
 
 /** Notes are glanced at: this many at most, of NOTE_WORDS words at most. */
-const MAX_NOTES = 3;
+const MAX_NOTES = 4;
 const NOTE_WORDS = 6;
 const brief = (note: string) => {
   const words = note.replace(/\*\*/g, "").split(/\s+/u);

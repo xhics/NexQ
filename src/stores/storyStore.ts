@@ -183,25 +183,43 @@ export function styleEdits(stories: StarStory[]): StyleEdit[] {
     .map((s) => ({ before: s.original!.trim(), after: s.answer.trim() }));
 }
 
-const STYLE_START = "[Mon style, appris de mes corrections]";
-const STYLE_END = "[/Mon style]";
+/** A block of the AI's instructions NexQ writes and can find again, between its two tags. */
+type Block = { open: string; close: string };
 
-/** `instructions` with the learnt style block replaced (or added, or removed when `rules` is empty). */
-export function withStyleBlock(instructions: string, rules: string): string {
-  const start = instructions.indexOf(STYLE_START);
-  const end = instructions.indexOf(STYLE_END);
+const STYLE: Block = { open: "[Mon style, appris de mes corrections]", close: "[/Mon style]" };
+const JOB: Block = {
+  open: "[Le poste visé : chaque réponse montre, par des exemples concrets, que je corresponds à ce poste]",
+  close: "[/Le poste visé]",
+};
+
+/** `instructions` with `block` replaced (or added, or removed when `text` is empty). */
+function withBlock(instructions: string, { open, close }: Block, text: string): string {
+  const start = instructions.indexOf(open);
+  const end = instructions.indexOf(close);
   const without =
     start >= 0 && end > start
-      ? (instructions.slice(0, start) + instructions.slice(end + STYLE_END.length)).replace(/\n{3,}/g, "\n\n").trim()
+      ? (instructions.slice(0, start) + instructions.slice(end + close.length)).replace(/\n{3,}/g, "\n\n").trim()
       : instructions.trim();
-  if (!rules.trim()) return without;
-  const block = `${STYLE_START}\n${rules.trim()}\n${STYLE_END}`;
+  if (!text.trim()) return without;
+  const block = `${open}\n${text.trim()}\n${close}`;
   return without ? `${without}\n\n${block}` : block;
 }
 
-/** The rules currently in the learnt style block, if any. */
-export function styleBlockOf(instructions: string): string {
-  const start = instructions.indexOf(STYLE_START);
-  const end = instructions.indexOf(STYLE_END);
-  return start >= 0 && end > start ? instructions.slice(start + STYLE_START.length, end).trim() : "";
+/** What `block` holds in `instructions`, if it is there. */
+function blockOf(instructions: string, { open, close }: Block): string {
+  const start = instructions.indexOf(open);
+  const end = instructions.indexOf(close);
+  return start >= 0 && end > start ? instructions.slice(start + open.length, end).trim() : "";
 }
+
+/** `instructions` with the learnt style block replaced (or added, or removed when `rules` is empty). */
+export const withStyleBlock = (instructions: string, rules: string) => withBlock(instructions, STYLE, rules);
+
+/** The rules currently in the learnt style block, if any. */
+export const styleBlockOf = (instructions: string) => blockOf(instructions, STYLE);
+
+/** `instructions` with the job applied for (its offer) replaced, added, or removed when `job` is empty. */
+export const withJobBlock = (instructions: string, job: string) => withBlock(instructions, JOB, job);
+
+/** The job applied for, as the AI's instructions hold it, if they do. */
+export const jobBlockOf = (instructions: string) => blockOf(instructions, JOB);

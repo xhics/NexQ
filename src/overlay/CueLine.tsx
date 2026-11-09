@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { covered, saidInOrder } from "../hooks/useSaidSinceAnswer";
+import { clauses, covered, saidInOrder } from "../hooks/useSaidSinceAnswer";
 import { splitNotes } from "../lib/answerNotes";
 
 /**
@@ -50,10 +50,10 @@ function hastText(node: HastNode | undefined): string {
   return (node.children ?? []).map(hastText).join("");
 }
 
-/** Sentences of a paragraph, each yellow once said. */
+/** The pieces of a paragraph or a bullet (up to a comma), each yellow once said. */
 function Sentences({ children, isSaid }: { children: ReactNode; isSaid: (piece: string) => boolean }) {
   if (typeof children !== "string") return <>{children}</>;
-  const parts = children.match(/[^.!?…]+[.!?…]*\s*/gu) ?? [children];
+  const parts = clauses(children);
   return <>{parts.map((p, i) => <span key={i} {...saidProps(isSaid(p))}>{p}</span>)}</>;
 }
 
@@ -69,9 +69,11 @@ export function AnswerMarkdown({ content, cueSize, said }: { content: string; cu
     // Said in order: what comes before the last part you said is said too.
     const isSaid = saidInOrder(rest, said);
     return {
-      li: ({ node, children, ...props }) => (
-        <li {...props} {...saidProps(isSaid(hastText(node as HastNode)))}>{children}</li>
-      ),
+      // A bullet of plain text goes yellow piece by piece too.
+      li: ({ node, children, ...props }) =>
+        typeof children === "string"
+          ? <li {...props}><Sentences isSaid={isSaid}>{children}</Sentences></li>
+          : <li {...props} {...saidProps(isSaid(hastText(node as HastNode)))}>{children}</li>,
       // A paragraph of plain text goes yellow sentence by sentence; one with
       // bold or links in it, as a whole.
       p: ({ node, children, ...props }) =>

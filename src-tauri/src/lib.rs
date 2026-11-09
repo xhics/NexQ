@@ -342,6 +342,16 @@ pub fn run() {
                                     drop(provider); // release tokio lock before std lock
 
                                     if let Ok(mut router) = llm_arc.lock() {
+                                        // Listing the models takes a while: by now the
+                                        // saved settings may have set another provider or
+                                        // model, which this must not overwrite.
+                                        let same_provider = router
+                                            .get_provider()
+                                            .map(|p| Arc::ptr_eq(&p, &provider_arc))
+                                            .unwrap_or(false);
+                                        if !same_provider || !router.active_model().is_empty() {
+                                            return;
+                                        }
                                         router.set_active_model(first_model.clone());
                                         log::info!(
                                             "Auto-detected Ollama model: {} (from {} available)",

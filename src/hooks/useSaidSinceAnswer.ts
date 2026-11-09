@@ -6,6 +6,13 @@ import { contentWords } from "../stores/storyStore";
 // Your lines are labelled "User" (the "You" party).
 const isYou = (speaker: string) => speaker === "User";
 
+/**
+ * A line of yours as shown, interim words included: a transcriber that
+ * finalizes by turn (Flux) gives the final text only once you stop, which
+ * would hold the marks back for as long as you read.
+ */
+const shown = (s: { text: string; pending_text?: string }) => s.pending_text?.trim() || s.text;
+
 /** How many words you have said since the current answer started. */
 let spokenCount = 0;
 
@@ -26,7 +33,7 @@ export function useSaidSinceAnswer(): Set<string> {
     // Your lines when the answer started, and how much of each was said by then.
     let before = new Map<string, number>();
     const snapshot = () => {
-      before = new Map(useTranscriptStore.getState().segments.filter((s) => isYou(s.speaker)).map((s) => [s.id, s.text.length]));
+      before = new Map(useTranscriptStore.getState().segments.filter((s) => isYou(s.speaker)).map((s) => [s.id, shown(s).length]));
     };
     snapshot();
     let lastText = "";
@@ -41,7 +48,7 @@ export function useSaidSinceAnswer(): Set<string> {
       const text = useTranscriptStore
         .getState()
         .segments.filter((s) => isYou(s.speaker))
-        .map((s) => s.text.slice(before.get(s.id) ?? 0))
+        .map((s) => shown(s).slice(before.get(s.id) ?? 0))
         .join(" ");
       if (text === lastText) return;
       lastText = text;
@@ -93,8 +100,17 @@ const plainWords = (text: string) =>
   text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /**
- * What of `answer` (markdown) you have said, read in order: the sentences up
- * to the last one you said, those you said in your own words included.
+ * `text` cut where you pause: after a comma, a semicolon, a colon or a full
+ * stop (not inside a number like 3,5), each piece keeping its punctuation and
+ * the space after it.
+ */
+export function clauses(text: string): string[] {
+  return text.match(/[^]+?(?:[.,;:!?…]+(?=\s|$)\s*|$)/gu) ?? [text];
+}
+
+/**
+ * What of `answer` (markdown) you have said, read in order: the pieces (up to
+ * a comma) up to the last one you said, those you said in your own words included.
  * Returns whether a piece of the answer is in it.
  */
 export function saidInOrder(answer: string, said: Set<string>): (piece: string) => boolean {
@@ -103,13 +119,13 @@ export function saidInOrder(answer: string, said: Set<string>): (piece: string) 
     .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replace(/^\s*(?:[-+*]|\d+[.)])\s+/gmu, "")
     .replace(/[*_`#>]/gu, "");
-  const units = plain.match(/[^.!?…\n]+[.!?…]*/gu) ?? [];
+  const units = plain.split("\n").flatMap((line) => (line.trim() ? clauses(line) : []));
   let last = -1;
   units.forEach((u, i) => { if (covered(u, said)) last = i; });
   const before = last < 0 ? "" : plainWords(units.slice(0, last + 1).join(" "));
   return (piece) => {
     if (covered(piece, said)) return true;
     const words = plainWords(piece);
-    return words.length >= 3 && before.includes(words);
+    return words.length >= 2 && before.includes(words);
   };
 }

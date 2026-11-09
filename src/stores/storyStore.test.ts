@@ -73,4 +73,14 @@ describe("your style, from your edits", () => {
     expect(twice.match(/Mon style, appris/g)).toHaveLength(1);
     expect(withStyleBlock(twice, "")).toBe(mine);
   });
+
+  it("keeps the job applied for in its own block, beside the style", async () => {
+    const { jobBlockOf, styleBlockOf, withJobBlock, withStyleBlock } = await import("./storyStore");
+    const styled = withStyleBlock("Je suis architecte GenAI.", "- Utilise je");
+    const aimed = withJobBlock(styled, "Architecte GenAI chez Acme");
+    expect(jobBlockOf(aimed)).toBe("Architecte GenAI chez Acme");
+    expect(styleBlockOf(aimed)).toBe("- Utilise je");
+    expect(jobBlockOf(withJobBlock(aimed, "Lead MLOps"))).toBe("Lead MLOps");
+    expect(withJobBlock(aimed, "")).toBe(styled);
+  });
 });

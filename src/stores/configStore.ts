@@ -27,7 +27,8 @@ const DEFAULT_DEEPGRAM_CONFIG: DeepgramConfig = {
   model: "nova-3",
   smart_format: false,
   interim_results: true,
-  endpointing: 300,
+  // 200 ms of silence closes a line: answers start sooner (300 ms before).
+  endpointing: 200,
   punctuate: true,
   diarize: true,
   profanity_filter: false,

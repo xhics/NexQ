@@ -9,15 +9,23 @@ import { wordsSaidSinceAnswer } from "./useSaidSinceAnswer";
 export const READING_START_DELAY_MS = 8000;
 /** After your own scroll, the text stays where you put it this long. */
 const MANUAL_HOLD_MS = 5000;
-/** How fast the text catches up with what you have said (px/s, at least). */
-const FOLLOW_MIN_SPEED = 80;
+/** How fast the text catches up with what you have said (px/s, at least): a glide, not a jump. */
+const FOLLOW_MIN_SPEED = 40;
 /**
- * Where the word you are at sits in the box (share of its height), so the
- * lines still to say stay in view below it.
+ * Where the word you are at sits in the box (share of its height): about
+ * the middle, so the line you are reading and the one before it stay in
+ * view above it, and what is left to say below.
  */
-const READ_LINE = 0.3;
+const READ_LINE = 0.45;
 /** Part of your words counted as read: "euh", repeats and asides don't run it ahead of you. */
 const SPOKEN_SHARE = 0.85;
+/**
+ * The yellow marks never move the text further than this many times the
+ * words you have said (plus a few): a sentence taken for said by mistake
+ * further down doesn't throw the text past what you are reading.
+ */
+const SAID_AHEAD_SHARE = 1.3;
+const SAID_AHEAD_WORDS = 8;
 
 /** Handlers to put on the scrolled element. */
 export interface ReadingScrollHandlers {
@@ -52,7 +60,8 @@ function saidTarget(el: HTMLElement): number {
   const last = said[said.length - 1] as HTMLElement | undefined;
   if (!last?.getBoundingClientRect) return 0;
   const bottom = last.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
-  return Math.max(0, bottom - Math.min(24, el.clientHeight * 0.2));
+  // The last part said stays in view, at about the middle of the box.
+  return Math.max(0, bottom - el.clientHeight * (1 - READ_LINE));
 }
 
 /**
@@ -110,7 +119,7 @@ export function useReadingScroll(
   const state = useRef({
     pos: 0, startAt: Infinity, holdUntil: 0, hovered: false, lastLen: 0, key: null as string | null,
     // The spoken target, measured again only when your words or the text change.
-    spoken: { n: -1, height: -1, target: 0 },
+    spoken: { n: -1, height: -1, target: 0, cap: 0 },
   });
   const speedRef = useRef(speed);
   speedRef.current = speed;
@@ -124,7 +133,7 @@ export function useReadingScroll(
       s.key = key;
       s.pos = 0;
       s.startAt = Infinity;
-      s.spoken = { n: -1, height: -1, target: 0 };
+      s.spoken = { n: -1, height: -1, target: 0, cap: 0 };
       if (ref.current) ref.current.scrollTop = 0;
     }
     if (content && s.startAt === Infinity) s.startAt = performance.now() + READING_START_DELAY_MS;
@@ -146,16 +155,20 @@ export function useReadingScroll(
           // They are still talking: the wait runs from their last word.
           s.startAt = Math.max(s.startAt, now + READING_START_DELAY_MS - OTHER_PARTY_QUIET_MS);
         }
-        const n = Math.floor((signalsRef.current.wordsSaid?.() ?? 0) * SPOKEN_SHARE);
+        const words = signalsRef.current.wordsSaid?.() ?? 0;
+        const n = Math.floor(words * SPOKEN_SHARE);
         if (n !== s.spoken.n || el.scrollHeight !== s.spoken.height) {
-          s.spoken = { n, height: el.scrollHeight, target: spokenTarget(el, n) };
+          const capAt = words > 0 ? Math.ceil(words * SAID_AHEAD_SHARE) + SAID_AHEAD_WORDS : 0;
+          s.spoken = { n, height: el.scrollHeight, target: spokenTarget(el, n), cap: capAt ? spokenTarget(el, capAt) : 0 };
         }
-        const follow = Math.min(max, Math.max(saidTarget(el), s.spoken.target));
+        // No words of yours counted (or no text to measure): the yellow marks alone.
+        const said = s.spoken.cap > 0 ? Math.min(saidTarget(el), s.spoken.cap) : saidTarget(el);
+        const follow = Math.min(max, Math.max(said, s.spoken.target));
         if (now < s.holdUntil) {
           s.pos = el.scrollTop;
         } else if (follow > s.pos + 1) {
           // You said it: move on past it.
-          s.pos = Math.min(follow, s.pos + Math.max(FOLLOW_MIN_SPEED, speedRef.current * 4) * dt);
+          s.pos = Math.min(follow, s.pos + Math.max(FOLLOW_MIN_SPEED, speedRef.current * 2) * dt);
           el.scrollTop = s.pos;
         } else if (s.hovered) {
           // The mouse on the box holds the pace still, not the following.

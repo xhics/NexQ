@@ -76,8 +76,11 @@ export type TurnStep =
   | { kind: "answer"; question: string; early: boolean; replaces: boolean }
   /** The early answer was right: it stands. */
   | { kind: "confirm" }
-  /** The early answer was a guess that didn't hold: stop it. */
-  | { kind: "withdraw" }
+  /**
+   * The turn ended on no question by the rules: the AI judges what they
+   * said (nothing new, more to add, or something else to answer).
+   */
+  | { kind: "judge" }
   | { kind: "none" };
 
 /**
@@ -85,6 +88,21 @@ export type TurnStep =
  * signal. `question` is the line's newest sentence when it looks like a
  * question, else null; `current` is the newest automatic answer.
  */
+/** Words a question needs before it is answered on "probably done", closed with a question mark. */
+export const EARLY_MIN_WORDS = 6;
+/** The same, without a question mark: the transcriber often leaves it out. */
+export const EARLY_MIN_WORDS_UNMARKED = 9;
+
+/**
+ * Whether `question` looks asked in full: answered on "probably done", a
+ * question cut short ("Raconte-moi une décision") would be answered on its
+ * start, and the answer often misses where it was going.
+ */
+export function looksComplete(question: string): boolean {
+  const words = question.split(/\s+/u).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  return /[?？]\s*$/u.test(question) ? words >= EARLY_MIN_WORDS : words >= EARLY_MIN_WORDS_UNMARKED;
+}
+
 export function decideTurnStep(
   turn: TurnSignal,
   segmentId: string,
@@ -96,17 +114,20 @@ export function decideTurnStep(
   switch (turn) {
     case "eager_end":
       if (!question || samePoint(early?.question, question)) return { kind: "none" };
+      // Cut short, it waits for "done": answered on its start, the answer would miss it.
+      if (!looksComplete(question)) return { kind: "none" };
       return { kind: "answer", question, early: true, replaces: !!early };
     case "resumed":
-      return early ? { kind: "withdraw" } : { kind: "none" };
+      // The early answer goes on: what they add is answered from it at the end.
+      return { kind: "none" };
     case "end":
       if (early) {
         if (samePoint(early.question, question)) return { kind: "confirm" };
         return question
           ? { kind: "answer", question, early: false, replaces: true }
-          : { kind: "withdraw" };
+          : { kind: "judge" };
       }
-      if (!question) return { kind: "none" };
+      if (!question) return { kind: "judge" };
       // A repeated "done" for a question already answered.
       if (current?.segmentId === segmentId && samePoint(current.question, question)) return { kind: "none" };
       return { kind: "answer", question, early: false, replaces: false };

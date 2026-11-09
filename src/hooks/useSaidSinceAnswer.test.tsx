@@ -26,10 +26,10 @@ describe("what you already said", () => {
     expect(keyword).toHaveAttribute("data-said", "1");
     expect(keyword.className).toContain("yellow");
     expect(screen.getByText("−30 % délais")).not.toHaveAttribute("data-said");
-    const item = screen.getByText(/Automatisé les processus/).closest("li");
+    const item = screen.getByText(/Automatisé les processus/);
     expect(item).toHaveAttribute("data-said", "1");
     expect(item?.className).toContain("text-yellow-300");
-    expect(screen.getByText(/Réduit les délais/).closest("li")).not.toHaveAttribute("data-said");
+    expect(screen.getByText(/Réduit les délais/)).not.toHaveAttribute("data-said");
     expect(document.body.innerHTML).not.toContain("line-through");
   });
 });
@@ -52,5 +52,21 @@ describe("what you said since the answer started", () => {
     expect(result.current.has("automatise")).toBe(true);
     // Said before the answer started, and the other party's words: not counted.
     expect(result.current.has("capgemini")).toBe(false);
+  });
+});
+
+describe("while you read the answer out", () => {
+  it("counts your words as they come, before the transcriber finalizes the line", async () => {
+    const { renderHook, act } = await import("@testing-library/react");
+    const { useSaidSinceAnswer, wordsSaidSinceAnswer } = await import("./useSaidSinceAnswer");
+    const { useTranscriptStore } = await import("../stores/transcriptStore");
+    const { useStreamStore } = await import("../stores/streamStore");
+    const line = { id: "u1", speaker: "User" as const, text: "", timestamp_ms: 1, is_final: true, confidence: 1 };
+    useTranscriptStore.setState({ segments: [line] });
+    act(() => useStreamStore.setState({ answerSince: 1 }));
+    const { result } = renderHook(() => useSaidSinceAnswer());
+    act(() => useTranscriptStore.setState({ segments: [{ ...line, pending_text: "je contiens l'incident tout de suite" }] }));
+    expect(result.current.has("incident")).toBe(true);
+    expect(wordsSaidSinceAnswer()).toBe(6);
   });
 });

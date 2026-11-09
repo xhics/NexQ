@@ -111,31 +111,35 @@ describe("Auto-Answer with the provider's turn signals (Cartesia, Deepgram Flux)
     vi.useFakeTimers();
     setAutoTrigger(true);
     render(<QuestionDetector />);
-    send(turnLine("What would you do first?", "eager_end"));
+    send(turnLine("What would you do first after an outage?", "eager_end"));
     await settle();
-    expect(askedFor()).toEqual(["What would you do first?"]);
-    send(turnLine("What would you do first?", "end"));
+    expect(askedFor()).toEqual(["What would you do first after an outage?"]);
+    send(turnLine("What would you do first after an outage?", "end"));
     await settle();
     expect(runUserAction).toHaveBeenCalledTimes(1);
     expect(cancelGeneration).not.toHaveBeenCalled();
   });
 
-  it("stops the early answer when they keep talking, and answers the whole question at the end", async () => {
+  it("lets the early answer go on when they keep talking, and answers the whole question from it at the end", async () => {
     vi.useFakeTimers();
     setAutoTrigger(true);
     answersRunUntilStopped();
     render(<QuestionDetector />);
-    send(turnLine("What would you do", "eager_end"));
+    send(turnLine("What would you do first with a broken build", "eager_end"));
     await settle();
     const early = requestOf(0);
-    send(turnLine("What would you do", "resumed"));
+    send(turnLine("What would you do first with a broken build", "resumed"));
     await settle();
-    expect(cancelGeneration).toHaveBeenCalledWith(early);
-    expect(screen.queryByText("Answered")).toBeNull();
+    // Not thrown away while they talk.
+    expect(cancelGeneration).not.toHaveBeenCalled();
 
     send(turnLine("What would you do if the build broke?", "end"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
     await settle();
-    expect(askedFor()).toEqual(["What would you do", "What would you do if the build broke?"]);
+    // Stopped where it was (kept), then the whole question is answered after it.
+    expect(cancelGeneration).toHaveBeenCalledWith(early);
+    expect(askedFor()).toHaveLength(2);
+    expect(askedFor()[1]).toContain("What would you do if the build broke?");
   });
 
   it("replaces the early answer when the turn ends with a different question", async () => {
@@ -143,12 +147,12 @@ describe("Auto-Answer with the provider's turn signals (Cartesia, Deepgram Flux)
     setAutoTrigger(true);
     answersRunUntilStopped();
     render(<QuestionDetector />);
-    send(turnLine("What would you do?", "eager_end"));
+    send(turnLine("What would you do after an outage?", "eager_end"));
     await settle();
     send(turnLine("What would you do if the build broke?", "end"));
     await settle();
     expect(cancelGeneration).toHaveBeenCalledWith(requestOf(0));
-    expect(askedFor()).toEqual(["What would you do?", "What would you do if the build broke?"]);
+    expect(askedFor()).toEqual(["What would you do after an outage?", "What would you do if the build broke?"]);
   });
 
   it("never stops an answer you asked for: the question waits as a card to click", async () => {
@@ -263,6 +267,8 @@ describe("Auto-Trigger", () => {
   it("waits less after a question mark, the full wait otherwise", () => {
     expect(quietWait("Comment tu as tranché ?")).toBe(QUICK_TRIGGER_DELAY_MS);
     expect(quietWait("Comment tu as tranché")).toBe(AUTO_TRIGGER_DELAY_MS);
+    // Found as a question by its words: the short wait too.
+    expect(quietWait("Comment tu as tranché", true)).toBe(QUICK_TRIGGER_DELAY_MS);
   });
 
   it("answers a question once the other party has been quiet for a moment", () => {
@@ -350,9 +356,10 @@ describe("Auto-Trigger", () => {
     setAutoTrigger(true);
     useTranscriptStore.setState({ segments: [seg("What would you do")] });
     render(<QuestionDetector />);
-    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS - 500));
+    // Each pause is shorter than the wait for a clear question.
+    act(() => vi.advanceTimersByTime(QUICK_TRIGGER_DELAY_MS - 200));
     act(() => useTranscriptStore.setState({ segments: [seg("What would you do if the build broke?", false)] }));
-    act(() => vi.advanceTimersByTime(AUTO_TRIGGER_DELAY_MS - 500));
+    act(() => vi.advanceTimersByTime(QUICK_TRIGGER_DELAY_MS - 200));
     act(() => useTranscriptStore.setState({ segments: [seg("What would you do if the build broke?")] }));
     act(() => vi.advanceTimersByTime(QUICK_TRIGGER_DELAY_MS - 1));
     expect(runUserAction).not.toHaveBeenCalled();
@@ -703,7 +710,7 @@ describe("a turn the rules don't see as a question", () => {
     act(() => useTranscriptStore.setState({ segments: [seg("Comment tu commencerais"), { ...seg(feedback), id: "them_2" }] }));
     await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
     await settle();
-    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(followOnRequest(feedback, "Je commencerais par les logs."));
+    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(followOnRequest(feedback, "Je commencerais par les logs.", "Comment tu commencerais"));
     // Nothing new: the answer stays as it was, and the line is no card to click.
     expect(useStreamStore.getState().currentContent).toBe("Je commencerais par les logs.");
     expect(useStreamStore.getState().responseHistory).toHaveLength(1);
@@ -736,6 +743,27 @@ describe("a turn the rules don't see as a question", () => {
   });
 });
 
+describe("a clear question after a line the AI is judging", () => {
+  it("doesn't wait for the judgment: it is stopped and the question answered at once", async () => {
+    vi.useFakeTimers();
+    setDefaults({ autoTrigger: true, autoAnswerUnsure: true });
+    answersRunUntilStopped();
+    const feedback = "Nickel, c'est net, concret, orienté résultat, merci.";
+    useTranscriptStore.setState({ segments: [seg(feedback)] });
+    render(<QuestionDetector />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_TRIGGER_DELAY_MS + 10); });
+    expect(vi.mocked(runUserAction).mock.calls[0][1]).toBe(unsureRequest(feedback));
+    const judging = vi.mocked(runUserAction).mock.calls[0][2]?.requestId;
+
+    const question = "Comment tu mesures le succès d'un projet ?";
+    act(() => useTranscriptStore.setState({ segments: [seg(feedback), { ...seg(question), id: "them_2" }] }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(QUICK_TRIGGER_DELAY_MS + 10); });
+    await settle();
+    expect(cancelGeneration).toHaveBeenCalledWith(judging);
+    expect(vi.mocked(runUserAction).mock.calls[1][1]).toBe(question);
+  });
+});
+
 describe("acknowledgements", () => {
   it("an answer on screen stays when \"oui\" or \"d'accord\" is glued to its question", async () => {
     vi.useFakeTimers();
@@ -752,5 +780,27 @@ describe("acknowledgements", () => {
 
   it("\"Oui, d'accord, très bien\" is no turn to answer", () => {
     expect(whatToAnswer("Oui, d'accord, très bien, parfait", true)).toBeNull();
+  });
+});
+
+describe("a question announced, then set out as a scenario", () => {
+  it("isn't answered on its announcement alone", () => {
+    expect(whatToAnswer("Solide, deuxième mise en situation?", false)).toBeNull();
+    expect(whatToAnswer("Bien, question finale pour ce bloc.", false)).toBeNull();
+  });
+
+  it("is answered with its setting, not on its last sentence alone", () => {
+    const turn = "Solide, deuxième mise en situation? Un incident de données sensibles lié à une intégration non conforme. Que fais-tu dans les premières vingt quatre heures en quatre étapes max";
+    expect(whatToAnswer(turn, false)).toBe(
+      "Un incident de données sensibles lié à une intégration non conforme. Que fais-tu dans les premières vingt quatre heures en quatre étapes max",
+    );
+    // A plain question keeps to itself.
+    expect(whatToAnswer("Thanks for joining. What would you do first?", false)).toBe("What would you do first?");
+  });
+
+  it("tells the AI what the answer on screen was written for, to rewrite it when it answers something else", () => {
+    const req = followOnRequest("Comment tu balances standardisation et autonomie ?", "- Je mesure l'adoption par l'usage réel.", "Comment tu mesures l'adoption ?");
+    expect(req).toContain('written for: "Comment tu mesures l\'adoption ?"');
+    expect(req).toContain("answers another question or subject");
   });
 });
